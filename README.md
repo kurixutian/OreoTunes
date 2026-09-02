@@ -125,11 +125,34 @@ Current release:
 
 ## 📸 Screenshots
 
-Screenshots will be added here.
+### Home
 
-The project is actively being developed, and the interface continues to evolve.
+<p align="center">
+  <img src="docs/screenshots/home_default.PNG" alt="OreoTunes home screen" width="32%">
+  <img src="docs/screenshots/home_dark.PNG" alt="OreoTunes home screen in dark mode" width="32%">
+  <img src="docs/screenshots/home_light.PNG" alt="OreoTunes home screen in light mode" width="32%">
+</p>
 
----
+### Playback
+
+<p align="center">
+  <img src="docs/screenshots/now_playing.PNG" alt="OreoTunes now playing screen" width="48%">
+  <img src="docs/screenshots/lyrics.PNG" alt="OreoTunes lyrics screen" width="48%">
+</p>
+
+### Library
+
+<p align="center">
+  <img src="docs/screenshots/album.PNG" alt="OreoTunes album screen" width="48%">
+  <img src="docs/screenshots/artist.PNG" alt="OreoTunes artist screen" width="48%">
+</p>
+
+### Insights & Settings
+
+<p align="center">
+  <img src="docs/screenshots/insights.PNG" alt="OreoTunes listening insights" width="48%">
+  <img src="docs/screenshots/settings.PNG" alt="OreoTunes settings screen" width="48%">
+</p>
 
 ## 🛠️ Development
 
