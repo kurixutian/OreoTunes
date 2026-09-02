@@ -128,9 +128,12 @@ Current release:
 ### Home
 
 <p align="center">
-  <img src="docs/screenshots/home_default.PNG" alt="OreoTunes home screen" width="32%">
-  <img src="docs/screenshots/home_dark.PNG" alt="OreoTunes home screen in dark mode" width="32%">
-  <img src="docs/screenshots/home_light.PNG" alt="OreoTunes home screen in light mode" width="32%">
+  <img src="docs/screenshots/home_default.PNG" alt="OreoTunes home screen" width="48%">
+  <img src="docs/screenshots/home_dark.PNG" alt="OreoTunes home screen in dark mode" width="48%">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/home_light.PNG" alt="OreoTunes home screen in light mode" width="48%">
 </p>
 
 ### Playback
