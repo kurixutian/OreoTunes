@@ -282,7 +282,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private fun ensureServiceStarted() {
         val intent = Intent(getApplication(), PlaybackService::class.java)
         try {
-            ContextCompat.startForegroundService(getApplication(), intent)
+            getApplication<Application>().startService(intent)
         } catch (_: Exception) {}
 
         viewModelScope.launch(Dispatchers.Main) {
