@@ -1,0 +1,34 @@
+OreoTunes is a local music player for managing and listening to music stored on an Android device.
+
+<b>Features</b>
+
+• Play music stored on the device
+• Album-art backgrounds and dynamic colors
+• Light, dark, and AMOLED-friendly themes
+• Home, album, artist, and now-playing views
+• Search the local music library
+• Favorites and playlists
+• Lyrics support
+• Music insights and listening statistics
+• Edit song metadata
+• Online metadata lookup through MusicBrainz and iTunes
+• Album artwork retrieval through Cover Art Archive
+• Optional AI mood and trip playlist generation with Google Gemini
+• Built with Kotlin, Jetpack Compose, and Material 3
+
+<b>Privacy and network access</b>
+
+OreoTunes is primarily a local music player and does not require an account to play music stored on the device.
+
+Online metadata lookup is user-triggered and sends the selected song's title and artist to MusicBrainz or iTunes to find matching metadata. Album artwork may be downloaded from Cover Art Archive or artwork URLs returned by the metadata services.
+
+The optional Gemini feature requires the user to provide their own Gemini API key. When an AI playlist is generated, the mood request and selected song metadata (title, artist, album, and song ID) are sent to Google Gemini. The API key is stored locally on the device.
+
+OreoTunes also checks GitHub for the latest OreoTunes release when the app starts and provides a manual update-check option. It does not automatically download or install updates.
+
+<b>Open source</b>
+
+OreoTunes is released under the Apache License 2.0.
+
+Source code, releases, issue tracking, and project information are available on the OreoTunes GitHub repository.
+.
