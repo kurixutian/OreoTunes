@@ -222,9 +222,9 @@ You can also report bugs, suggest features, or share the project with other Andr
 
 ## 📄 License
 
-OreoTunes will include an explicit open-source license in the repository.
+OreoTunes is licensed under the Apache License 2.0.
 
-License information will be documented here once the project's licensing setup is finalized.
+See the [LICENSE](LICENSE) file for the complete license text.
 
 ---
 
