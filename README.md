@@ -119,7 +119,7 @@ The latest stable version is available from GitHub Releases.
 
 Current release:
 
-**v1.0.0**
+**v1.0.1**
 
 ---
 
@@ -175,13 +175,16 @@ The project is currently focused on improving:
 
 ## 🔐 Privacy
 
-OreoTunes is designed around your personal music library.
+OreoTunes is primarily a local music player and does not require an account to play music stored on your device.
 
-Detailed information about data handling, permissions, network access, and privacy will be documented as the project continues to mature.
+Online metadata lookup is user-triggered. The selected song's title and artist may be sent to MusicBrainz or iTunes to find matching metadata. Album artwork may be downloaded from Cover Art Archive or artwork URLs returned by the metadata services.
 
----
+The optional Gemini feature requires your own Gemini API key. When an AI playlist is generated, the mood request and selected song metadata (title, artist, album, and song ID) are sent to Google Gemini. The API key is stored locally on the device.
+
+OreoTunes also checks GitHub for the latest OreoTunes release when the app starts and provides a manual update-check option. It does not automatically download or install updates.
 
 ## 🗺️ Roadmap
+
 
 Planned improvements include:
 
