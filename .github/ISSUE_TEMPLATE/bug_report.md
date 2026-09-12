@@ -28,7 +28,7 @@ assignees: ""
 
 - Device:
 - Android version:
-- OreoTunes version: 1.0.0
+- OreoTunes version: 1.1.0
 
 ## Additional Information
 
