@@ -1,0 +1,454 @@
+package com.kurixutian.oreotunes.data.repository
+
+import android.content.ContentUris
+import android.content.Context
+import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
+import com.kurixutian.oreotunes.domain.model.Song
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+data class AlbumGroup(
+    val title: String,
+    val artist: String,
+    val albumArtUri: Uri?,
+    val songCount: Int,
+    val songs: List<Song> = emptyList()
+)
+
+data class ArtistGroup(
+    val name: String,
+    val albumArtUri: Uri?,
+    val songCount: Int,
+    val songs: List<Song> = emptyList()
+)
+
+fun splitArtists(rawArtist: String): List<String> {
+    if (rawArtist.isBlank()) return listOf("Unknown Artist")
+
+    return rawArtist
+        .split(
+            Regex(
+                "[,&/]|\\bfeat\\.\\b|\\bft\\.\\b|\\bfeaturing\\b|;|\\bx\\b",
+                RegexOption.IGNORE_CASE
+            )
+        )
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .ifEmpty { listOf(rawArtist.trim()) }
+}
+
+fun matchesArtist(songArtist: String, targetArtist: String): Boolean {
+    val artists = splitArtists(songArtist)
+
+    return artists.any {
+        it.equals(targetArtist.trim(), ignoreCase = true)
+    } || songArtist.contains(
+        targetArtist.trim(),
+        ignoreCase = true
+    )
+}
+
+class MusicRepository(private val context: Context) {
+
+    /**
+     * Lightweight fingerprint of the MediaStore music library.
+     *
+     * This is intentionally based on MediaStore identity/metadata rather
+     * than filesystem timestamps so it remains useful with Android's
+     * scoped-storage model.
+     */
+    data class LibraryFingerprint(
+        val songCount: Int,
+        val hash: Long
+    )
+
+    suspend fun getLibraryFingerprint(): LibraryFingerprint = withContext(Dispatchers.IO) {
+        val collection =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Audio.Media.getContentUri(
+                    MediaStore.VOLUME_EXTERNAL
+                )
+            } else {
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            }
+
+        /*
+         * Include identity, metadata, filename, location and file state.
+         *
+         * The fingerprint must change when a song is:
+         * - added
+         * - removed
+         * - renamed
+         * - moved to another folder
+         * - changed in duration/metadata
+         *
+         * RELATIVE_PATH is used on Android 10+ because DATA is deprecated
+         * and should not be relied upon under scoped storage.
+         */
+        val projection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.ALBUM,
+                MediaStore.Audio.Media.DURATION,
+                MediaStore.Audio.Media.ALBUM_ID,
+                MediaStore.Audio.Media.RELATIVE_PATH,
+                MediaStore.Audio.Media.DISPLAY_NAME,
+                MediaStore.Audio.Media.SIZE,
+                MediaStore.Audio.Media.DATE_MODIFIED
+            )
+        } else {
+            arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.ALBUM,
+                MediaStore.Audio.Media.DURATION,
+                MediaStore.Audio.Media.ALBUM_ID,
+                MediaStore.Audio.Media.DATA,
+                MediaStore.Audio.Media.DISPLAY_NAME,
+                MediaStore.Audio.Media.SIZE,
+                MediaStore.Audio.Media.DATE_MODIFIED
+            )
+        }
+
+        val selection =
+            "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND " +
+                    "${MediaStore.Audio.Media.DURATION} >= 15000"
+
+        var count = 0
+        var hash = 17L
+
+        try {
+            context.contentResolver.query(
+                collection,
+                projection,
+                selection,
+                null,
+                "${MediaStore.Audio.Media._ID} ASC"
+            )?.use { cursor ->
+
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                val albumIdCol =
+                    cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+
+                val displayNameCol =
+                    cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+
+                val sizeCol =
+                    cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
+
+                val dateModifiedCol =
+                    cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
+
+                val locationCol =
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        cursor.getColumnIndexOrThrow(
+                            MediaStore.Audio.Media.RELATIVE_PATH
+                        )
+                    } else {
+                        cursor.getColumnIndexOrThrow(
+                            MediaStore.Audio.Media.DATA
+                        )
+                    }
+
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idCol)
+                    val title = cursor.getString(titleCol) ?: ""
+                    val artist = cursor.getString(artistCol) ?: ""
+                    val album = cursor.getString(albumCol) ?: ""
+                    val duration = cursor.getLong(durationCol)
+                    val albumId = cursor.getLong(albumIdCol)
+                    val displayName = cursor.getString(displayNameCol) ?: ""
+                    val location = cursor.getString(locationCol) ?: ""
+                    val size = cursor.getLong(sizeCol)
+                    val dateModified = cursor.getLong(dateModifiedCol)
+
+                    count++
+
+                    hash = 31L * hash + id
+                    hash = 31L * hash + title.hashCode().toLong()
+                    hash = 31L * hash + artist.hashCode().toLong()
+                    hash = 31L * hash + album.hashCode().toLong()
+                    hash = 31L * hash + duration
+                    hash = 31L * hash + albumId
+                    hash = 31L * hash + displayName.hashCode().toLong()
+                    hash = 31L * hash + location.hashCode().toLong()
+                    hash = 31L * hash + size
+                    hash = 31L * hash + dateModified
+                }
+            } ?: throw IllegalStateException(
+                "MediaStore returned a null music cursor"
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+            throw e
+        }
+
+        LibraryFingerprint(
+            songCount = count,
+            hash = hash
+        )
+    }
+
+    suspend fun loadSongs(): List<Song> = withContext(Dispatchers.IO) {
+        val songsList = mutableListOf<Song>()
+
+        val collection =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Audio.Media.getContentUri(
+                    MediaStore.VOLUME_EXTERNAL
+                )
+            } else {
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            }
+
+        /*
+         * Android 10+:
+         * RELATIVE_PATH is the supported way to determine the
+         * MediaStore folder without relying on the deprecated DATA path.
+         *
+         * Android 9 and below:
+         * DATA remains available and is used as the fallback.
+         */
+        val projection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.ALBUM,
+                MediaStore.Audio.Media.DURATION,
+                MediaStore.Audio.Media.ALBUM_ID,
+                MediaStore.Audio.Media.RELATIVE_PATH,
+                MediaStore.Audio.Media.DISPLAY_NAME
+            )
+        } else {
+            arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.ALBUM,
+                MediaStore.Audio.Media.DURATION,
+                MediaStore.Audio.Media.ALBUM_ID,
+                MediaStore.Audio.Media.DATA,
+                MediaStore.Audio.Media.DISPLAY_NAME
+            )
+        }
+
+        val selection =
+            "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND " +
+                    "${MediaStore.Audio.Media.DURATION} >= 15000"
+
+        val sortOrder =
+            "${MediaStore.Audio.Media.TITLE} ASC"
+
+        try {
+            context.contentResolver.query(
+                collection,
+                projection,
+                selection,
+                null,
+                sortOrder
+            )?.use { cursor ->
+
+                val idCol =
+                    cursor.getColumnIndexOrThrow(
+                        MediaStore.Audio.Media._ID
+                    )
+
+                val titleCol =
+                    cursor.getColumnIndexOrThrow(
+                        MediaStore.Audio.Media.TITLE
+                    )
+
+                val artistCol =
+                    cursor.getColumnIndexOrThrow(
+                        MediaStore.Audio.Media.ARTIST
+                    )
+
+                val albumCol =
+                    cursor.getColumnIndexOrThrow(
+                        MediaStore.Audio.Media.ALBUM
+                    )
+
+                val durationCol =
+                    cursor.getColumnIndexOrThrow(
+                        MediaStore.Audio.Media.DURATION
+                    )
+
+                val albumIdCol =
+                    cursor.getColumnIndexOrThrow(
+                        MediaStore.Audio.Media.ALBUM_ID
+                    )
+
+                val relativePathCol =
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        cursor.getColumnIndex(
+                            MediaStore.Audio.Media.RELATIVE_PATH
+                        )
+                    } else {
+                        -1
+                    }
+
+                val dataCol =
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                        cursor.getColumnIndex(
+                            MediaStore.Audio.Media.DATA
+                        )
+                    } else {
+                        -1
+                    }
+
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idCol)
+
+                    val title =
+                        cursor.getString(titleCol)
+                            ?.takeIf { it.isNotBlank() }
+                            ?: "Unknown Title"
+
+                    val rawArtist =
+                        cursor.getString(artistCol)
+                            ?.takeIf { it.isNotBlank() }
+                            ?: "Unknown Artist"
+
+                    val rawAlbum =
+                        cursor.getString(albumCol)
+                            ?.takeIf { it.isNotBlank() }
+                            ?: "Unknown Album"
+
+                    val duration =
+                        cursor.getLong(durationCol)
+
+                    val albumId =
+                        cursor.getLong(albumIdCol)
+
+                    val artist =
+                        if (rawArtist.contains("<unknown>", true)) {
+                            "Unknown Artist"
+                        } else {
+                            rawArtist
+                        }
+
+                    val album =
+                        if (rawAlbum.contains("<unknown>", true)) {
+                            "Unknown Album"
+                        } else {
+                            rawAlbum
+                        }
+
+                    /*
+                     * Build a stable MediaStore content URI.
+                     */
+                    val contentUri =
+                        ContentUris.withAppendedId(
+                            collection,
+                            id
+                        )
+
+                    /*
+                     * Album artwork URI.
+                     */
+                    val albumArtUri =
+                        if (albumId > 0L) {
+                            ContentUris.withAppendedId(
+                                Uri.parse(
+                                    "content://media/external/audio/albumart"
+                                ),
+                                albumId
+                            )
+                        } else {
+                            null
+                        }
+
+                    /*
+                     * Determine folder path.
+                     *
+                     * RELATIVE_PATH normally looks like:
+                     *
+                     * Music/
+                     * Music/Artist/
+                     * Music/Artist/Album/
+                     *
+                     * OreoTunes historically works with absolute paths,
+                     * so prefix it with /storage/emulated/0.
+                     */
+                    val folderPath =
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+
+                            val relativePath =
+                                if (relativePathCol >= 0) {
+                                    cursor.getString(relativePathCol)
+                                        ?: ""
+                                } else {
+                                    ""
+                                }
+
+                            if (relativePath.isNotBlank()) {
+                                val cleanRelative =
+                                    relativePath
+                                        .trim()
+                                        .trimStart('/')
+                                        .trimEnd('/')
+
+                                if (cleanRelative.isNotBlank()) {
+                                    "/storage/emulated/0/$cleanRelative"
+                                } else {
+                                    "/storage/emulated/0"
+                                }
+                            } else {
+                                "/storage/emulated/0"
+                            }
+
+                        } else {
+
+                            val filePath =
+                                if (dataCol >= 0) {
+                                    cursor.getString(dataCol)
+                                        ?: ""
+                                } else {
+                                    ""
+                                }
+
+                            if (
+                                filePath.isNotBlank() &&
+                                filePath.contains('/')
+                            ) {
+                                filePath.substringBeforeLast('/')
+                            } else {
+                                ""
+                            }
+                        }
+
+                    songsList.add(
+                        Song(
+                            id = id,
+                            title = title,
+                            artist = artist,
+                            album = album,
+                            duration = duration,
+                            contentUri = contentUri,
+                            albumArtUri = albumArtUri,
+                            folderPath = folderPath
+                        )
+                    )
+                }
+            } ?: throw IllegalStateException(
+                "MediaStore returned a null music cursor"
+            )
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+            throw e
+        }
+
+        songsList
+    }
+}

@@ -1,0 +1,3 @@
+Improved Gemini AI mood and trip playlist generation for larger music libraries.
+
+Improved playlist size handling and song selection to produce more complete AI-generated playlists.

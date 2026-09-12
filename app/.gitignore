@@ -1,0 +1,15 @@
+# Android module build output
+/build/
+
+# Generated files
+/generated/
+
+# Local signing configuration
+*.jks
+*.keystore
+*.p12
+*.pfx
+
+release.properties
+signing.properties
+keystore.properties

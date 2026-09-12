@@ -1,0 +1,36 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Outer Oreo Cookie Ring -->
+    <path
+        android:fillColor="#12131A"
+        android:pathData="M54,20 C35.22,20 20,35.22 20,54 C20,72.78 35.22,88 54,88 C72.78,88 88,72.78 88,54 C88,35.22 72.78,20 54,20 Z"/>
+        
+    <!-- Crisp Cookie Edge Detail -->
+    <path
+        android:strokeColor="#252838"
+        android:strokeWidth="2.5"
+        android:pathData="M54,26 C38.54,26 26,38.54 26,54 C26,69.46 38.54,82 54,82 C69.46,82 82,69.46 82,54 C82,38.54 69.46,26 54,26 Z"/>
+        
+    <!-- Oreo Vanilla Cream Core -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,32 C41.85,32 32,41.85 32,54 C32,66.15 41.85,76 54,76 C66.15,76 76,66.15 76,54 C76,41.85 66.15,32 54,32 Z"/>
+
+    <!-- Dynamic Audio Waveform Overlay Inside Cream Core -->
+    <path
+        android:fillColor="#0091FF"
+        android:pathData="M43,49 L47,49 L47,59 L43,59 Z"/>
+    <path
+        android:fillColor="#0091FF"
+        android:pathData="M49,43 L53,43 L53,65 L49,65 Z"/>
+    <path
+        android:fillColor="#0091FF"
+        android:pathData="M55,40 L59,40 L59,68 L55,68 Z"/>
+    <path
+        android:fillColor="#0091FF"
+        android:pathData="M61,46 L65,46 L65,62 L61,62 Z"/>
+</vector>

@@ -1,0 +1,3 @@
+Fixed a startup crash that could cause OreoTunes to close immediately on some Android devices.
+
+Improved playback service startup to prevent a foreground-service startup timeout before playback begins.

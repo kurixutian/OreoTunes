@@ -1,0 +1,165 @@
+# ============================================================
+# OreoTunes - Android / Gradle / Android Studio
+# ============================================================
+
+# -------------------------
+# Android build outputs
+# -------------------------
+*.apk
+*.aab
+*.aar
+*.ap_
+*.dex
+
+# Gradle
+.gradle/
+**/build/
+
+# Android generated files
+gen/
+out/
+bin/
+
+# Native build
+.externalNativeBuild/
+.cxx/
+
+# -------------------------
+# Local Android configuration
+# -------------------------
+local.properties
+
+# -------------------------
+# Signing / Keystores
+# NEVER commit these
+# -------------------------
+*.jks
+*.keystore
+*.p12
+*.pfx
+
+release.properties
+signing.properties
+keystore.properties
+
+# -------------------------
+# Secrets / environment
+# -------------------------
+.env
+.env.*
+!.env.example
+
+# -------------------------
+# Google / Firebase secrets
+# -------------------------
+google-services.json
+
+# -------------------------
+# ProGuard / R8
+# -------------------------
+proguard/
+mapping/
+
+# -------------------------
+# Android Studio
+# -------------------------
+.idea/
+*.iml
+
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/gradle.xml
+.idea/assetWizardSettings.xml
+.idea/dictionaries/
+.idea/libraries/
+.idea/caches/
+.idea/modules.xml
+.idea/navEditor.xml
+.idea/vcs.xml
+
+# -------------------------
+# IntelliJ
+# -------------------------
+*.ipr
+*.iws
+
+# -------------------------
+# Kotlin
+# -------------------------
+.kotlin/
+
+# -------------------------
+# Logs
+# -------------------------
+*.log
+
+# -------------------------
+# Temporary files
+# -------------------------
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# -------------------------
+# Android Studio captures
+# -------------------------
+captures/
+
+# -------------------------
+# Navigation
+# -------------------------
+.navigation/
+
+# -------------------------
+# Lint
+# -------------------------
+lint/intermediates/
+lint/generated/
+lint/outputs/
+lint/tmp/
+
+# -------------------------
+# Fastlane
+# -------------------------
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
+
+# -------------------------
+# OS files
+# -------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# -------------------------
+# IDE / editor files
+# -------------------------
+.vscode/
+*.code-workspace
+
+# -------------------------
+# Backup files
+# -------------------------
+*.bak
+*.backup
+*.old
+
+# -------------------------
+# Crash / profiling output
+# -------------------------
+*.hprof
+
+# Code On The Go project metadata
+.cg/
+
+# Local development backups / temporary working copies
+*.before-*
+*.working
+*.corrupted
+*.backup
+*.bad-insertion
+*.damaged.backup.kt
