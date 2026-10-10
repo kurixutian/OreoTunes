@@ -174,6 +174,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var seekCrossfadeJob: Job? = null
     private var playbackPersistenceJob: Job? = null
     private var isCrossfading: Boolean = false
+    private var crossfadeTargetVolume: Float = 1f
     private var hasAutoCrossfadedThisTrack: Boolean = false
 
     /*
@@ -210,16 +211,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _playbackProgress = MutableStateFlow(0f)
     val playbackProgress: StateFlow<Float> = _playbackProgress.asStateFlow()
 
-    private val mediaControlReceiver = object : BroadcastReceiver() {
+    private val deviceEventReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             try {
                 when (intent?.action) {
-                    "com.kurixutian.oreotunes.MEDIA_CONTROL" -> {
-                        when (intent.getStringExtra("control_action")) {
-                            "NEXT" -> skipNext()
-                            "PREV" -> skipPrevious()
-                        }
-                    }
                     UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
                         checkAndPromptUsbDacPermission()
                         updateAudioRoutingDevices()
@@ -252,15 +247,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     init {
         try {
             val filter = IntentFilter().apply {
-                addAction("com.kurixutian.oreotunes.MEDIA_CONTROL")
                 addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
                 addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
                 addAction(ACTION_USB_PERMISSION)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                application.registerReceiver(mediaControlReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                application.registerReceiver(deviceEventReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
             } else {
-                application.registerReceiver(mediaControlReceiver, filter)
+                application.registerReceiver(deviceEventReceiver, filter)
             }
         } catch (_: Exception) {}
 
@@ -401,8 +395,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         // Only the authoritative primary player is allowed to update
         // Now Playing. The secondary player exists only underneath a
         // crossfade and must never change the visible song.
-        val activeP = primaryPlayer
-            ?: PlaybackService.delegatingPlayer?.activePlayer
+        val activeP = PlaybackService.delegatingPlayer?.activePlayer
+            ?: primaryPlayer
             ?: return
 
         val currentItem = activeP.currentMediaItem ?: return
@@ -820,7 +814,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         playSongInternal(song, isManual = true, autoExpand = autoExpand)
     }
 
-    private fun playSongInternal(song: Song, isManual: Boolean, autoExpand: Boolean = false) {
+    private fun playSongInternal(
+        song: Song,
+        isManual: Boolean,
+        autoExpand: Boolean = false,
+        snapTransition: Boolean = false
+    ) {
         viewModelScope.launch(Dispatchers.Main) {
             val p1 = primaryPlayer ?: PlaybackService.playerA ?: return@launch
             val p2 = secondaryPlayer ?: PlaybackService.playerB ?: return@launch
@@ -848,15 +847,35 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 .setMediaMetadata(metadata)
                 .build()
 
+            val queueItems = _uiState.value.currentQueue
+                .ifEmpty { listOf(song) }
+                .map { queueSong ->
+                    val queueMetadata = MediaMetadata.Builder()
+                        .setTitle(queueSong.title)
+                        .setArtist(queueSong.artist)
+                        .setAlbumTitle(queueSong.album)
+                        .setArtworkUri(queueSong.albumArtUri)
+                        .build()
+                    MediaItem.Builder()
+                        .setUri(queueSong.contentUri)
+                        .setMediaMetadata(queueMetadata)
+                        .build()
+                }
+            PlaybackService.instance?.setPlaybackQueue(
+                queueItems,
+                repeatAll = _uiState.value.repeatMode == 2
+            )
+
             val isBypassed = isBypassActive()
             val isNormEnabled = _uiState.value.volumeNormalizationEnabled && !isBypassed
             val targetProfile = loudnessEngine.getOrComputeLoudnessProfile(song)
             val baseLinearMultiplier = if (isNormEnabled) targetProfile.linearGainMultiplier else 1.0f
+            crossfadeTargetVolume = baseLinearMultiplier
 
             val crossfadeEnabled = _uiState.value.crossfadeEnabled && !isBypassed
             val crossfadeDurationMs = if (isManual) 1200L else (_uiState.value.crossfadeDurationSec * 1000L).coerceAtLeast(1000L)
 
-            if (crossfadeEnabled && p1.isPlaying) {
+            if (crossfadeEnabled && p1.isPlaying && !snapTransition) {
                 isCrossfading = true
                 crossfadeJob?.cancel()
 
@@ -878,7 +897,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 // Do this BEFORE any expensive artwork processing.
                 primaryPlayer = newPlayer
                 secondaryPlayer = oldPlayer
-                PlaybackService.delegatingPlayer?.activePlayer = newPlayer
+                PlaybackService.instance?.setActivePlayer(newPlayer)
+                PlaybackService.instance?.setCrossfadeState(true) {
+                    cancelCrossfadeForTransport()
+                }
 
                 // Switch Now Playing immediately.
                 _uiState.update {
@@ -945,22 +967,33 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
                     } finally {
                         if (!isActive) {
-                            // If another song interrupts this transition,
-                            // don't leave the secondary player audible.
-                            newPlayer.pause()
-                            newPlayer.stop()
-                            newPlayer.clearMediaItems()
-                            newPlayer.volume = 1f
-                            oldPlayer.volume = baseLinearMultiplier
+                            val activePlayer =
+                                PlaybackService.delegatingPlayer?.activePlayer
+                            if (activePlayer === newPlayer) {
+                                oldPlayer.pause()
+                                oldPlayer.stop()
+                                oldPlayer.clearMediaItems()
+                                oldPlayer.volume = 1f
+                                newPlayer.volume = baseLinearMultiplier
+                            } else {
+                                newPlayer.pause()
+                                newPlayer.stop()
+                                newPlayer.clearMediaItems()
+                                newPlayer.volume = 1f
+                                oldPlayer.volume = baseLinearMultiplier
+                            }
                             isCrossfading = false
+                            PlaybackService.instance?.setCrossfadeState(false)
                         }
                     }
 
                     isCrossfading = false
+                    PlaybackService.instance?.setCrossfadeState(false)
                 }
             } else {
                 crossfadeJob?.cancel()
                 isCrossfading = false
+                PlaybackService.instance?.setCrossfadeState(false)
                 p2.stop()
                 p2.clearMediaItems()
                 p1.volume = baseLinearMultiplier
@@ -970,7 +1003,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
                 primaryPlayer = p1
                 secondaryPlayer = p2
-                PlaybackService.delegatingPlayer?.activePlayer = p1
+                PlaybackService.instance?.setActivePlayer(p1)
 
                 val palette = withContext(Dispatchers.IO) {
                     artworkRepo.extractPalette(song.albumArtUri)
@@ -1031,6 +1064,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun skipNext() {
+        val interruptedCrossfade = isCrossfading
+        if (interruptedCrossfade) cancelCrossfadeForTransport()
+
         val state = _uiState.value
         val activeQueue =
             if (state.currentQueue.isNotEmpty()) {
@@ -1065,7 +1101,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 )
             }
 
-            playSongInternal(nextSong, isManual = true)
+            playSongInternal(
+                nextSong,
+                isManual = true,
+                snapTransition = interruptedCrossfade
+            )
             return
         }
 
@@ -1130,10 +1170,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             )
         }
 
-        playSongInternal(nextSong, isManual = true)
+        playSongInternal(
+            nextSong,
+            isManual = true,
+            snapTransition = interruptedCrossfade
+        )
     }
 
     fun skipPrevious() {
+        val interruptedCrossfade = isCrossfading
+        if (interruptedCrossfade) cancelCrossfadeForTransport()
+
         val p = primaryPlayer ?: PlaybackService.playerA
         if (p != null && p.currentPosition > 3000L) {
             seekTo(0L)
@@ -1143,11 +1190,46 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (activeQueue.isEmpty()) return
         val currentIndex = activeQueue.indexOfFirst { it.id == _uiState.value.currentSong?.id }
         val prevIndex = if (currentIndex <= 0) activeQueue.size - 1 else currentIndex - 1
-        playSongInternal(activeQueue[prevIndex], isManual = true)
+        playSongInternal(
+            activeQueue[prevIndex],
+            isManual = true,
+            snapTransition = interruptedCrossfade
+        )
+    }
+
+    private fun cancelCrossfadeForTransport() {
+        crossfadeJob?.cancel()
+        crossfadeJob = null
+        seekCrossfadeJob?.cancel()
+        seekCrossfadeJob = null
+        isCrossfading = false
+        PlaybackService.instance?.setCrossfadeState(false)
+
+        val activePlayer = PlaybackService.delegatingPlayer?.activePlayer as? ExoPlayer
+            ?: primaryPlayer
+            ?: return
+        val inactivePlayer = when (activePlayer) {
+            PlaybackService.playerA -> PlaybackService.playerB
+            else -> PlaybackService.playerA
+        }
+
+        activePlayer.volume = crossfadeTargetVolume
+        inactivePlayer?.run {
+            pause()
+            stop()
+            clearMediaItems()
+            volume = 1f
+        }
+
+        primaryPlayer = activePlayer
+        secondaryPlayer = inactivePlayer
     }
 
     fun togglePlayPause() {
-        val p = primaryPlayer ?: PlaybackService.playerA ?: return
+        val p = PlaybackService.delegatingPlayer?.activePlayer
+            ?: primaryPlayer
+            ?: PlaybackService.playerA
+            ?: return
         if (p.isPlaying) {
             p.pause()
             secondaryPlayer?.pause()
@@ -1245,6 +1327,23 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         primaryPlayer?.repeatMode = playerRepeatMode
         secondaryPlayer?.repeatMode = playerRepeatMode
         _uiState.update { it.copy(repeatMode = newRepeat) }
+        PlaybackService.instance?.setPlaybackQueue(
+            _uiState.value.currentQueue.ifEmpty {
+                _uiState.value.currentSong?.let { listOf(it) } ?: emptyList()
+            }.map { song ->
+                val metadata = MediaMetadata.Builder()
+                    .setTitle(song.title)
+                    .setArtist(song.artist)
+                    .setAlbumTitle(song.album)
+                    .setArtworkUri(song.albumArtUri)
+                    .build()
+                MediaItem.Builder()
+                    .setUri(song.contentUri)
+                    .setMediaMetadata(metadata)
+                    .build()
+            },
+            repeatAll = newRepeat == 2
+        )
     }
 
     fun addSongsToQueue(songs: List<Song>) {
@@ -1619,6 +1718,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun restorePlaybackState() {
         try {
+            val activePlayer = PlaybackService.delegatingPlayer?.activePlayer ?: primaryPlayer
+            if (activePlayer != null && (activePlayer.isPlaying || activePlayer.currentMediaItem != null)) {
+                syncStateFromActivePlayback()
+                return
+            }
+
             if (!playbackPrefs.hasSavedPlaybackState()) return
 
             val library = allRawScannedSongs
@@ -1638,25 +1743,62 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 else -> emptyList()
             }
 
-            _uiState.update {
-                it.copy(
-                    currentQueue = queue,
-                    currentSong = restoredCurrentSong,
-                    isShuffleOn = playbackPrefs.isShuffleEnabled(),
-                    repeatMode = playbackPrefs.getRepeatMode().coerceIn(0, 2),
-                    currentPosition = playbackPrefs.getCurrentPositionMs()
-                )
-            }
-
             val restorePosition = playbackPrefs.getCurrentPositionMs()
-
-            restoredCurrentSong?.let { song ->
-                viewModelScope.launch(Dispatchers.Main) {
-                    val player = primaryPlayer
-                        ?: PlaybackService.delegatingPlayer?.activePlayer
+            viewModelScope.launch(Dispatchers.Main) {
+                var player = PlaybackService.delegatingPlayer?.activePlayer as? ExoPlayer
+                    ?: primaryPlayer
+                    ?: PlaybackService.playerA
+                var attempts = 0
+                while (player == null && attempts < 30) {
+                    delay(100L)
+                    player = PlaybackService.delegatingPlayer?.activePlayer as? ExoPlayer
+                        ?: primaryPlayer
                         ?: PlaybackService.playerA
-                        ?: return@launch
+                    attempts++
+                }
+                val restorePlayer = player ?: return@launch
 
+                // Notification controls may advance playback while the UI is closed.
+                // Recheck after service startup before applying an older saved track.
+                if (restorePlayer.isPlaying || restorePlayer.currentMediaItem != null) {
+                    primaryPlayer = restorePlayer
+                    secondaryPlayer = if (restorePlayer === PlaybackService.playerA) {
+                        PlaybackService.playerB
+                    } else {
+                        PlaybackService.playerA
+                    }
+                    syncStateFromActivePlayback()
+                    return@launch
+                }
+
+                _uiState.update {
+                    it.copy(
+                        currentQueue = queue,
+                        currentSong = restoredCurrentSong,
+                        isShuffleOn = playbackPrefs.isShuffleEnabled(),
+                        repeatMode = playbackPrefs.getRepeatMode().coerceIn(0, 2),
+                        currentPosition = restorePosition
+                    )
+                }
+
+                val queueItems = queue.map { queueSong ->
+                    val metadata = MediaMetadata.Builder()
+                        .setTitle(queueSong.title)
+                        .setArtist(queueSong.artist)
+                        .setAlbumTitle(queueSong.album)
+                        .setArtworkUri(queueSong.albumArtUri)
+                        .build()
+                    MediaItem.Builder()
+                        .setUri(queueSong.contentUri)
+                        .setMediaMetadata(metadata)
+                        .build()
+                }
+                PlaybackService.instance?.setPlaybackQueue(
+                    queueItems,
+                    repeatAll = playbackPrefs.getRepeatMode() == 2
+                )
+
+                restoredCurrentSong?.let { song ->
                     val metadata = MediaMetadata.Builder()
                         .setTitle(song.title)
                         .setArtist(song.artist)
@@ -1669,22 +1811,22 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                         .setMediaMetadata(metadata)
                         .build()
 
-                    player.setMediaItem(mediaItem)
-                    player.prepare()
+                    restorePlayer.setMediaItem(mediaItem)
+                    restorePlayer.prepare()
 
-                    player.seekTo(restorePosition.coerceAtLeast(0L))
+                    restorePlayer.seekTo(restorePosition.coerceAtLeast(0L))
 
                     // Shuffle order is restored through currentQueue.
                     // Do not let ExoPlayer maintain a second shuffle order.
-                    player.shuffleModeEnabled = false
-                    player.repeatMode = when (playbackPrefs.getRepeatMode().coerceIn(0, 2)) {
+                    restorePlayer.shuffleModeEnabled = false
+                    restorePlayer.repeatMode = when (playbackPrefs.getRepeatMode().coerceIn(0, 2)) {
                         1 -> Player.REPEAT_MODE_ONE
                         2 -> Player.REPEAT_MODE_ALL
                         else -> Player.REPEAT_MODE_OFF
                     }
 
                     if (playbackPrefs.wasPlaying()) {
-                        player.play()
+                        restorePlayer.play()
                     }
                 }
             }
@@ -2301,7 +2443,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
         try {
             audioManager?.unregisterAudioDeviceCallback(audioDeviceCallback)
-            getApplication<Application>().unregisterReceiver(mediaControlReceiver)
+            getApplication<Application>().unregisterReceiver(deviceEventReceiver)
         } catch (_: Exception) {}
+        PlaybackService.instance?.setCrossfadeState(false)
     }
 }

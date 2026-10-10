@@ -34,6 +34,10 @@ class PlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var isForegroundActive = false
     private lateinit var notificationManager: NotificationManager
+    private var queue: List<MediaItem> = emptyList()
+    private var repeatAll = false
+    private var isCrossfading = false
+    private var cancelCrossfade: (() -> Unit)? = null
 
     companion object {
         const val CHANNEL_ID = "oreotunes_playback_channel"
@@ -108,7 +112,7 @@ class PlaybackService : MediaSessionService() {
         playerA = pA
         playerB = pB
 
-        val delegating = DelegatingForwardingPlayer(this, pA)
+        val delegating = DelegatingForwardingPlayer(pA)
         delegatingPlayer = delegating
 
         val sessionActivityIntent =
@@ -231,6 +235,69 @@ class PlaybackService : MediaSessionService() {
         controllerInfo: MediaSession.ControllerInfo
     ): MediaSession? {
         return mediaSession
+    }
+
+    fun setPlaybackQueue(items: List<MediaItem>, repeatAll: Boolean) {
+        queue = items.toList()
+        this.repeatAll = repeatAll
+    }
+
+    fun setCrossfadeState(active: Boolean, cancel: (() -> Unit)? = null) {
+        isCrossfading = active
+        cancelCrossfade = if (active) cancel else null
+    }
+
+    fun setActivePlayer(player: Player) {
+        if (delegatingPlayer?.activePlayer === player) return
+        val forwardingPlayer = DelegatingForwardingPlayer(player)
+        delegatingPlayer = forwardingPlayer
+        mediaSession?.setPlayer(forwardingPlayer)
+        updateNotification()
+    }
+
+    fun skipNext() {
+        navigateQueue(forward = true)
+    }
+
+    fun skipPrevious() {
+        interruptCrossfade()
+        val active = delegatingPlayer?.activePlayer ?: return
+        if (active.currentPosition > 3_000L) {
+            active.seekTo(0L)
+            return
+        }
+        navigateQueue(forward = false)
+    }
+
+    private fun navigateQueue(forward: Boolean) {
+        interruptCrossfade()
+        val active = delegatingPlayer?.activePlayer ?: return
+        val items = queue
+        if (items.isEmpty()) return
+
+        val currentUri = active.currentMediaItem?.localConfiguration?.uri?.toString()
+        val currentIndex = items.indexOfFirst {
+            it.localConfiguration?.uri?.toString() == currentUri
+        }
+        val targetIndex = when {
+            currentIndex < 0 -> 0
+            forward && currentIndex < items.lastIndex -> currentIndex + 1
+            !forward && currentIndex > 0 -> currentIndex - 1
+            repeatAll -> if (forward) 0 else items.lastIndex
+            else -> return
+        }
+
+        active.setMediaItem(items[targetIndex])
+        active.prepare()
+        active.play()
+        updateNotification()
+    }
+
+    private fun interruptCrossfade() {
+        if (!isCrossfading) return
+        cancelCrossfade?.invoke()
+        isCrossfading = false
+        cancelCrossfade = null
     }
 
     /**
@@ -458,31 +525,11 @@ class PlaybackService : MediaSessionService() {
             }
 
             "ACTION_NEXT" -> {
-                sendBroadcast(
-                    Intent(
-                        "com.kurixutian.oreotunes.MEDIA_CONTROL"
-                    ).apply {
-                        putExtra(
-                            "control_action",
-                            "NEXT"
-                        )
-                        setPackage(packageName)
-                    }
-                )
+                skipNext()
             }
 
             "ACTION_PREV" -> {
-                sendBroadcast(
-                    Intent(
-                        "com.kurixutian.oreotunes.MEDIA_CONTROL"
-                    ).apply {
-                        putExtra(
-                            "control_action",
-                            "PREV"
-                        )
-                        setPackage(packageName)
-                    }
-                )
+                skipPrevious()
             }
         }
 
@@ -537,24 +584,8 @@ class PlaybackService : MediaSessionService() {
 
 @OptIn(UnstableApi::class)
 class DelegatingForwardingPlayer(
-    private val serviceContext: Context,
-    initialPlayer: Player
-) : ForwardingPlayer(initialPlayer) {
-
-    var activePlayer: Player = initialPlayer
-        set(value) {
-            field = value
-
-            /*
-             * The active player can change during crossfade without
-             * the MediaSession itself receiving an event from the
-             * newly selected player.
-             *
-             * Explicitly refresh OreoTunes' notification whenever
-             * the delegation target changes.
-             */
-            PlaybackService.instance?.updateNotification()
-        }
+    val activePlayer: Player
+) : ForwardingPlayer(activePlayer) {
 
     override fun getAvailableCommands(): Player.Commands {
         return activePlayer.availableCommands
@@ -625,19 +656,7 @@ class DelegatingForwardingPlayer(
     }
 
     override fun seekToNext() {
-        serviceContext.sendBroadcast(
-            Intent(
-                "com.kurixutian.oreotunes.MEDIA_CONTROL"
-            ).apply {
-                putExtra(
-                    "control_action",
-                    "NEXT"
-                )
-                setPackage(
-                    serviceContext.packageName
-                )
-            }
-        )
+        PlaybackService.instance?.skipNext()
     }
 
     override fun seekToNextMediaItem() {
@@ -645,19 +664,7 @@ class DelegatingForwardingPlayer(
     }
 
     override fun seekToPrevious() {
-        serviceContext.sendBroadcast(
-            Intent(
-                "com.kurixutian.oreotunes.MEDIA_CONTROL"
-            ).apply {
-                putExtra(
-                    "control_action",
-                    "PREV"
-                )
-                setPackage(
-                    serviceContext.packageName
-                )
-            }
-        )
+        PlaybackService.instance?.skipPrevious()
     }
 
     override fun seekToPreviousMediaItem() {
