@@ -149,13 +149,14 @@ class GeminiMoodEngine(context: Context) {
             """.trimIndent()
 
             val endpoint =
-                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=$apiKey"
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
             val url = URL(endpoint)
 
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("x-goog-api-key", apiKey)
                 doOutput = true
                 connectTimeout = 15000
                 readTimeout = 25000

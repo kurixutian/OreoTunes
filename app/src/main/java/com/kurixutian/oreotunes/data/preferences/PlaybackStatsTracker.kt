@@ -50,6 +50,8 @@ class PlaybackStatsTracker(context: Context) {
             Context.MODE_PRIVATE
         )
 
+    private var cachedEvents: MutableList<PlaySessionEvent>? = null
+
     companion object {
         private const val KEY_PLAY_EVENTS_LOG = "playback_events_log_v2"
         private const val KEY_RECENT_PLAYS = "chronological_recent_plays_v2"
@@ -83,6 +85,9 @@ class PlaybackStatsTracker(context: Context) {
                     Calendar.DAY_OF_WEEK,
                     calendar.firstDayOfWeek
                 )
+                if (calendar.timeInMillis > System.currentTimeMillis()) {
+                    calendar.add(Calendar.DAY_OF_YEAR, -7)
+                }
                 calendar.timeInMillis
             }
 
@@ -99,18 +104,21 @@ class PlaybackStatsTracker(context: Context) {
         }
     }
 
+    @Synchronized
     private fun loadAllEvents(): List<PlaySessionEvent> {
+        cachedEvents?.let { return it }
+
         val rawJson =
             prefs.getString(KEY_PLAY_EVENTS_LOG, "[]") ?: "[]"
 
-        return try {
+        val events = try {
             val array = JSONArray(rawJson)
-            val events = ArrayList<PlaySessionEvent>(array.length())
+            val list = ArrayList<PlaySessionEvent>(array.length())
 
             for (i in 0 until array.length()) {
                 val obj = array.optJSONObject(i) ?: continue
 
-                events.add(
+                list.add(
                     PlaySessionEvent(
                         id = obj.optLong("id", -1L),
                         title = obj.optString("title", ""),
@@ -129,12 +137,16 @@ class PlaybackStatsTracker(context: Context) {
                 )
             }
 
-            events
+            list
         } catch (_: Exception) {
-            emptyList()
+            mutableListOf()
         }
+
+        cachedEvents = events
+        return events
     }
 
+    @Synchronized
     private fun appendEvent(event: PlaySessionEvent) {
         val currentEvents =
             loadAllEvents().toMutableList()
@@ -143,10 +155,12 @@ class PlaybackStatsTracker(context: Context) {
 
         val trimmed =
             if (currentEvents.size > MAX_EVENT_LOG_SIZE) {
-                currentEvents.take(MAX_EVENT_LOG_SIZE)
+                currentEvents.take(MAX_EVENT_LOG_SIZE).toMutableList()
             } else {
                 currentEvents
             }
+
+        cachedEvents = trimmed
 
         val array = JSONArray()
 
@@ -790,6 +804,8 @@ class PlaybackStatsTracker(context: Context) {
                     trimmedRecentPlays.toString()
                 )
                 .apply()
+
+            cachedEvents = null
 
             Result.success(Unit)
         } catch (e: Exception) {

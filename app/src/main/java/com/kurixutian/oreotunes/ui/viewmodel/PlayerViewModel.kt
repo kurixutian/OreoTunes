@@ -265,7 +265,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         ensureServiceStarted()
         startPositionAndCrossfadeLoop()
         startPlaybackPersistenceLoop()
-        startHeroRefreshLoop()
+        refreshHeroAlbumsIfDue()
 
         // Keep the library synchronized with MediaStore changes.
         try {
@@ -370,7 +370,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         } catch (_: Exception) {}
 
         viewModelScope.launch(Dispatchers.Main) {
-            while (primaryPlayer == null) {
+            var attempts = 0
+            while (primaryPlayer == null && attempts < 30) {
+                attempts++
                 val pA = PlaybackService.playerA
                 val pB = PlaybackService.playerB
                 if (pA != null && pB != null) {
@@ -385,6 +387,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     setupPlayerListeners(pA)
                     setupPlayerListeners(pB)
                     syncStateFromActivePlayback()
+                    break
                 }
                 delay(200)
             }
@@ -692,22 +695,19 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun startHeroRefreshLoop() {
+    fun refreshHeroAlbumsIfDue() {
         viewModelScope.launch(Dispatchers.IO) {
-            while (isActive) {
-                val refreshHours = _uiState.value.heroRefreshHours.coerceIn(1, 6)
-                delay(60_000L) // Poll every minute to evaluate elapsed time against stored timestamp
-                val lastRefresh = playlistPrefs.getHeroLastRefreshTimestamp()
-                val now = System.currentTimeMillis()
-                val intervalMs = refreshHours * 60L * 60L * 1000L
+            val refreshHours = _uiState.value.heroRefreshHours.coerceIn(1, 6)
+            val lastRefresh = playlistPrefs.getHeroLastRefreshTimestamp()
+            val now = System.currentTimeMillis()
+            val intervalMs = refreshHours * 60L * 60L * 1000L
 
-                if (now - lastRefresh >= intervalMs && _uiState.value.suggestedAlbums.isNotEmpty()) {
-                    val newHero = _uiState.value.suggestedAlbums.shuffled().take(6)
-                    if (newHero.isNotEmpty()) {
-                        playlistPrefs.saveHeroLastRefreshTimestamp(now)
-                        playlistPrefs.saveHeroAlbumTitles(newHero.map { it.title })
-                        _uiState.update { it.copy(featuredHeroAlbums = newHero) }
-                    }
+            if (now - lastRefresh >= intervalMs && _uiState.value.suggestedAlbums.isNotEmpty()) {
+                val newHero = _uiState.value.suggestedAlbums.shuffled().take(6)
+                if (newHero.isNotEmpty()) {
+                    playlistPrefs.saveHeroLastRefreshTimestamp(now)
+                    playlistPrefs.saveHeroAlbumTitles(newHero.map { it.title })
+                    _uiState.update { it.copy(featuredHeroAlbums = newHero) }
                 }
             }
         }
@@ -942,6 +942,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     val steps = 20
                     val stepDelay = (crossfadeDurationMs / steps).coerceAtLeast(10L)
 
+                    val initialOldVolume = oldPlayer.volume.coerceAtLeast(0.01f)
                     try {
                         for (i in 1..steps) {
                             val progress = i.toFloat() / steps
@@ -950,9 +951,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                                 (progress * baseLinearMultiplier).coerceAtLeast(0f)
 
                             oldPlayer.volume =
-                                ((1f - progress) *
-                                    oldPlayer.volume.coerceAtLeast(0.01f))
-                                    .coerceAtLeast(0f)
+                                ((1f - progress) * initialOldVolume).coerceAtLeast(0f)
 
                             delay(stepDelay)
                         }
@@ -1304,6 +1303,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     currentQueue = shuffledQueue
                 )
             }
+            syncPlaybackServiceQueue(shuffledQueue)
         } else {
             // Disable shuffle without rebuilding or reshuffling the queue.
             _uiState.update {
@@ -1346,6 +1346,27 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         )
     }
 
+    private fun syncPlaybackServiceQueue(songs: List<Song> = _uiState.value.currentQueue) {
+        val queueItems = songs
+            .ifEmpty { _uiState.value.currentSong?.let { listOf(it) } ?: emptyList() }
+            .map { queueSong ->
+                val queueMetadata = MediaMetadata.Builder()
+                    .setTitle(queueSong.title)
+                    .setArtist(queueSong.artist)
+                    .setAlbumTitle(queueSong.album)
+                    .setArtworkUri(queueSong.albumArtUri)
+                    .build()
+                MediaItem.Builder()
+                    .setUri(queueSong.contentUri)
+                    .setMediaMetadata(queueMetadata)
+                    .build()
+            }
+        PlaybackService.instance?.setPlaybackQueue(
+            queueItems,
+            repeatAll = _uiState.value.repeatMode == 2
+        )
+    }
+
     fun addSongsToQueue(songs: List<Song>) {
         val queue = (_uiState.value.currentQueue.ifEmpty { _uiState.value.songs }).toMutableList()
         val currentId = _uiState.value.currentSong?.id
@@ -1356,6 +1377,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
         _uiState.update { it.copy(currentQueue = queue) }
+        syncPlaybackServiceQueue(queue)
     }
 
     fun playNext(song: Song) {
@@ -1368,6 +1390,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             queue.add(song)
         }
         _uiState.update { it.copy(currentQueue = queue) }
+        syncPlaybackServiceQueue(queue)
     }
 
     fun addToQueue(song: Song) {
@@ -1375,17 +1398,21 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         queue.remove(song)
         queue.add(song)
         _uiState.update { it.copy(currentQueue = queue) }
+        syncPlaybackServiceQueue(queue)
     }
 
     fun removeFromQueue(song: Song) {
         val queue = _uiState.value.currentQueue.toMutableList()
         queue.remove(song)
         _uiState.update { it.copy(currentQueue = queue) }
+        syncPlaybackServiceQueue(queue)
     }
 
     fun clearQueue() {
         val current = _uiState.value.currentSong
-        _uiState.update { it.copy(currentQueue = if (current != null) listOf(current) else emptyList()) }
+        val queue = if (current != null) listOf(current) else emptyList()
+        _uiState.update { it.copy(currentQueue = queue) }
+        syncPlaybackServiceQueue(queue)
     }
 
     /**
@@ -1436,6 +1463,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 currentQueue = queue.toList()
             )
         }
+        syncPlaybackServiceQueue(queue)
     }
 
 

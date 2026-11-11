@@ -30,7 +30,7 @@ fun splitArtists(rawArtist: String): List<String> {
     return rawArtist
         .split(
             Regex(
-                "[,&/]|\\bfeat\\.\\b|\\bft\\.\\b|\\bfeaturing\\b|;|\\bx\\b",
+                "[,&/]|\\b(?:feat|ft|featuring)\\b\\.?|;|\\bx\\b",
                 RegexOption.IGNORE_CASE
             )
         )
@@ -307,7 +307,8 @@ class MusicRepository(private val context: Context) {
                     MediaStore.Audio.Media.DURATION,
                     MediaStore.Audio.Media.ALBUM_ID,
                     MediaStore.Audio.Media.RELATIVE_PATH,
-                    MediaStore.Audio.Media.DISPLAY_NAME
+                    MediaStore.Audio.Media.DISPLAY_NAME,
+                    MediaStore.Audio.Media.DATA
                 )
             } else {
                 arrayOf(
@@ -393,13 +394,14 @@ class MusicRepository(private val context: Context) {
                 }
 
             val dataCol =
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                    it.getColumnIndex(
-                        MediaStore.Audio.Media.DATA
-                    )
-                } else {
-                    -1
-                }
+                it.getColumnIndex(
+                    MediaStore.Audio.Media.DATA
+                )
+
+            val displayNameCol =
+                it.getColumnIndex(
+                    MediaStore.Audio.Media.DISPLAY_NAME
+                )
 
             while (it.moveToNext()) {
                 val id =
@@ -523,6 +525,16 @@ class MusicRepository(private val context: Context) {
                         }
                     }
 
+                val rawDataPath = if (dataCol >= 0) it.getString(dataCol) ?: "" else ""
+                val displayName = if (displayNameCol >= 0) it.getString(displayNameCol) ?: "" else ""
+                val fullFilePath = if (rawDataPath.isNotBlank()) {
+                    rawDataPath
+                } else if (displayName.isNotBlank() && folderPath.isNotBlank()) {
+                    "$folderPath/$displayName"
+                } else {
+                    ""
+                }
+
                 songsList.add(
                     Song(
                         id = id,
@@ -532,7 +544,8 @@ class MusicRepository(private val context: Context) {
                         duration = duration,
                         contentUri = contentUri,
                         albumArtUri = albumArtUri,
-                        folderPath = folderPath
+                        folderPath = folderPath,
+                        filePath = fullFilePath
                     )
                 )
             }

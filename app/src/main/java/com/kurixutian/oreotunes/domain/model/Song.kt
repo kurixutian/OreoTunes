@@ -12,7 +12,8 @@ data class Song(
     val albumArtUri: Uri?,
     val folderPath: String,
     val size: Long = 0L,
-    val isFavorite: Boolean = false
+    val isFavorite: Boolean = false,
+    val filePath: String = ""
 )
 
 data class FolderInfo(

@@ -160,21 +160,39 @@ object LyricsExtractor {
         val read = inputStream.read(buffer)
         if (read <= 0) return null
 
-        val text = String(buffer, 0, read, Charsets.ISO_8859_1)
-        val usltIndex = text.indexOf("USLT")
-        if (usltIndex != -1 && usltIndex + 10 < text.length) {
-            val raw = text.substring(usltIndex + 4, (usltIndex + 4000).coerceAtMost(text.length))
-            val clean = raw.filter { it.code in 32..126 || it == '\n' || it == '\r' }.trim()
-            if (clean.length > 20) return clean
+        fun extractFrameLyrics(tagBytes: ByteArray, frameId: String): String? {
+            val frameBytes = frameId.toByteArray(Charsets.ISO_8859_1)
+            var idx = -1
+            for (i in 0 until read - frameBytes.size - 10) {
+                var found = true
+                for (j in frameBytes.indices) {
+                    if (tagBytes[i + j] != frameBytes[j]) {
+                        found = false
+                        break
+                    }
+                }
+                if (found) {
+                    idx = i
+                    break
+                }
+            }
+            if (idx == -1) return null
+
+            val dataStart = idx + 10
+            if (dataStart >= read) return null
+            val encoding = tagBytes[dataStart].toInt() and 0xFF
+            val charset = when (encoding) {
+                1 -> Charsets.UTF_16
+                2 -> Charsets.UTF_16BE
+                3 -> Charsets.UTF_8
+                else -> Charsets.ISO_8859_1
+            }
+            val contentStart = (dataStart + 4).coerceAtMost(read)
+            val raw = String(tagBytes, contentStart, (read - contentStart).coerceAtMost(8192), charset)
+            val clean = raw.filter { !it.isISOControl() || it == '\n' || it == '\r' || it == '\t' }.trim()
+            return if (clean.length > 10) clean else null
         }
 
-        val ultIndex = text.indexOf("ULT")
-        if (ultIndex != -1 && ultIndex + 6 < text.length) {
-            val raw = text.substring(ultIndex + 3, (ultIndex + 4000).coerceAtMost(text.length))
-            val clean = raw.filter { it.code in 32..126 || it == '\n' || it == '\r' }.trim()
-            if (clean.length > 20) return clean
-        }
-
-        return null
+        return extractFrameLyrics(buffer, "USLT") ?: extractFrameLyrics(buffer, "ULT")
     }
 }

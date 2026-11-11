@@ -277,7 +277,7 @@ fun NowPlayingScreen(
         }
     }
 
-    val currentLyricIndex by remember(currentPosition, parsedLyrics) {
+    val currentLyricIndex by remember(parsedLyrics) {
         derivedStateOf {
             if (parsedLyrics.isEmpty()) -1
             else {

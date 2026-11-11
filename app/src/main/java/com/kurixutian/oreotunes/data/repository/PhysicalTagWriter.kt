@@ -26,10 +26,11 @@ class PhysicalTagWriter(private val context: Context) {
     ): Boolean = withContext(Dispatchers.IO) {
 
         var fileModified = false
+        val targetPath = song.filePath.ifBlank { song.folderPath }
 
         try {
-            if (song.folderPath.isNotBlank()) {
-                val physicalFile = File(song.folderPath)
+            if (targetPath.isNotBlank()) {
+                val physicalFile = File(targetPath)
 
                 if (physicalFile.exists() && physicalFile.isFile && physicalFile.canWrite()) {
                     when (physicalFile.extension.lowercase()) {
@@ -95,11 +96,11 @@ class PhysicalTagWriter(private val context: Context) {
         }
 
         // Ask Android's media scanner to refresh the modified file.
-        if (fileModified && song.folderPath.isNotBlank()) {
+        if (fileModified && targetPath.isNotBlank()) {
             try {
                 MediaScannerConnection.scanFile(
                     context,
-                    arrayOf(song.folderPath),
+                    arrayOf(targetPath),
                     arrayOf("audio/*"),
                     null
                 )
@@ -161,12 +162,18 @@ class PhysicalTagWriter(private val context: Context) {
             /*
              * Preserve every block except:
              *
-             * 4 = VORBIS_COMMENT
-             * 6 = PICTURE
+             * 4 = VORBIS_COMMENT (always replaced)
+             * 6 = PICTURE (replaced only when new artwork is provided)
              *
              * Type 1 (PADDING) is intentionally preserved as well.
              */
-            if (blockType != 4 && blockType != 6) {
+            val shouldPreserve = when (blockType) {
+                4 -> false
+                6 -> artworkBytes == null
+                else -> true
+            }
+
+            if (shouldPreserve) {
                 val preserved = originalBytes.copyOfRange(offset, blockEnd)
 
                 // Clear the old isLast flag. We assign it again after adding
@@ -188,14 +195,6 @@ class PhysicalTagWriter(private val context: Context) {
         if (!foundLastBlock || audioStartOffset < 0) {
             return false
         }
-
-        /*
-         * Preserve the audio frames exactly as they were.
-         */
-        val audioFrames = originalBytes.copyOfRange(
-            audioStartOffset,
-            originalBytes.size
-        )
 
         /*
          * Add the new Vorbis Comment block.
@@ -260,7 +259,14 @@ class PhysicalTagWriter(private val context: Context) {
                     output.write(block)
                 }
 
-                output.write(audioFrames)
+                java.io.FileInputStream(file).use { input ->
+                    input.channel.position(audioStartOffset.toLong())
+                    val buffer = ByteArray(65536)
+                    var bytesRead: Int
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        output.write(buffer, 0, bytesRead)
+                    }
+                }
                 output.flush()
                 output.fd.sync()
             }
@@ -504,11 +510,6 @@ class PhysicalTagWriter(private val context: Context) {
             return false
         }
 
-        val audioPayload = originalBytes.copyOfRange(
-            audioOffset,
-            originalBytes.size
-        )
-
         val temporaryFile = File(
             file.parentFile,
             ".${file.name}.oreotunes_tmp"
@@ -518,7 +519,14 @@ class PhysicalTagWriter(private val context: Context) {
             FileOutputStream(temporaryFile).use { output ->
                 output.write(id3Header)
                 output.write(frameBytes)
-                output.write(audioPayload)
+                java.io.FileInputStream(file).use { input ->
+                    input.channel.position(audioOffset.toLong())
+                    val buffer = ByteArray(65536)
+                    var bytesRead: Int
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        output.write(buffer, 0, bytesRead)
+                    }
+                }
                 output.flush()
                 output.fd.sync()
             }

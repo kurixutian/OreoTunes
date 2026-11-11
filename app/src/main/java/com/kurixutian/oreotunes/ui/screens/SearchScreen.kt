@@ -35,6 +35,30 @@ import com.kurixutian.oreotunes.ui.components.GlassIconButton
 import com.kurixutian.oreotunes.ui.components.ModernGlassScrollBar
 import com.kurixutian.oreotunes.ui.theme.Manrope
 
+private val NonWordRegex = Regex("[^\\p{L}\\p{N}]+")
+private val WhitespaceRegex = Regex("\\s+")
+
+private fun searchEditDistance(a: String, b: String): Int {
+    if (a == b) return 0
+    val aLen = a.length
+    val bLen = b.length
+    if (aLen == 0) return bLen
+    if (bLen == 0) return aLen
+
+    val dp = IntArray(bLen + 1) { it }
+    for (i in 0 until aLen) {
+        var prev = i
+        dp[0] = i + 1
+        for (j in 0 until bLen) {
+            val temp = dp[j + 1]
+            val cost = if (a[i] == b[j]) 0 else 1
+            dp[j + 1] = minOf(dp[j + 1] + 1, dp[j] + 1, prev + cost)
+            prev = temp
+        }
+    }
+    return dp[bLen]
+}
+
 @Composable
 fun SearchScreen(
     songs: List<Song>,
@@ -72,8 +96,8 @@ fun SearchScreen(
     fun normalizeSearchText(value: String): String {
         return value
             .lowercase()
-            .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
-            .replace(Regex("\\s+"), " ")
+            .replace(NonWordRegex, " ")
+            .replace(WhitespaceRegex, " ")
             .trim()
     }
 
@@ -86,39 +110,6 @@ fun SearchScreen(
             .split(" ")
             .filter { it.isNotBlank() }
             .distinct()
-    }
-
-    /*
-     * Small, conservative Levenshtein distance.
-     *
-     * This is intentionally used only for reasonably sized words so a
-     * typo does not turn into an unrelated result.
-     */
-    fun searchEditDistance(a: String, b: String): Int {
-        if (a == b) return 0
-        if (a.isEmpty()) return b.length
-        if (b.isEmpty()) return a.length
-
-        var previous = IntArray(b.length + 1) { it }
-
-        for (i in a.indices) {
-            val current = IntArray(b.length + 1)
-            current[0] = i + 1
-
-            for (j in b.indices) {
-                val cost = if (a[i] == b[j]) 0 else 1
-
-                current[j + 1] = minOf(
-                    current[j] + 1,
-                    previous[j + 1] + 1,
-                    previous[j] + cost
-                )
-            }
-
-            previous = current
-        }
-
-        return previous[b.length]
     }
 
     fun isAcceptableTypo(queryToken: String, candidateWord: String): Boolean {

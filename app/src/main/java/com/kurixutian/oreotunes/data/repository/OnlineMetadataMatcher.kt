@@ -50,8 +50,8 @@ class OnlineMetadataMatcher(private val context: Context) {
     private fun queryMusicBrainzCandidates(title: String, artist: String): List<OnlineMetadataResult> {
         val list = mutableListOf<OnlineMetadataResult>()
         try {
-            val cleanTitle = title.replace(Regex("[^A-Za-z0-9 ]"), " ").trim()
-            val cleanArtist = artist.replace(Regex("[^A-Za-z0-9 ]"), " ").trim()
+            val cleanTitle = title.replace(Regex("""["\\+!(){}\[\]^~*?:/]"""), " ").trim()
+            val cleanArtist = artist.replace(Regex("""["\\+!(){}\[\]^~*?:/]"""), " ").trim()
             val query = URLEncoder.encode("recording:\"$cleanTitle\" AND artist:\"$cleanArtist\"", "UTF-8")
             val mbUrl = "https://musicbrainz.org/ws/2/recording/?query=$query&fmt=json&limit=10"
 

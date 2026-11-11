@@ -32,8 +32,8 @@ android {
         applicationId = "com.kurixutian.oreotunes"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.1.1"
+        versionCode = 6
+        versionName = "1.1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -43,7 +43,11 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            if (releasePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -84,8 +88,6 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
-    // DataStore Preferences
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     // AndroidX Palette
     implementation("androidx.palette:palette-ktx:1.0.0")

@@ -35,6 +35,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -97,6 +99,7 @@ fun SettingsDialog(
     val moodEngine = remember { GeminiMoodEngine(context) }
     var geminiApiKey by remember { mutableStateOf(moodEngine.getApiKey()) }
     var isKeySaved by remember { mutableStateOf(false) }
+    var isKeyVisible by remember { mutableStateOf(false) }
     var isScanning by remember { mutableStateOf(false) }
 
     var showColorPickerDialog by remember { mutableStateOf(false) }
@@ -440,6 +443,16 @@ Text(
                             },
                             placeholder = { Text("Paste your Gemini API key...", color = subtleColor.copy(alpha = 0.5f), fontSize = 12.sp) },
                             singleLine = true,
+                            visualTransformation = if (isKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { isKeyVisible = !isKeyVisible }) {
+                                    Icon(
+                                        imageVector = if (isKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                        contentDescription = if (isKeyVisible) "Hide API key" else "Show API key",
+                                        tint = subtleColor
+                                    )
+                                }
+                            },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = textColor,
                                 unfocusedTextColor = textColor,

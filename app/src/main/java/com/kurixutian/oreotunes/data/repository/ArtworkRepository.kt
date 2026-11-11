@@ -55,6 +55,7 @@ class ArtworkRepository(private val context: Context) {
             ?: return@withContext defaultNeutralPalette().also { paletteCache.put(cacheKey, it) }
 
         val extracted = analyzeBitmapPalette(bitmap)
+        bitmap.recycle()
         paletteCache.put(cacheKey, extracted)
         extracted
     }
@@ -76,7 +77,11 @@ class ArtworkRepository(private val context: Context) {
                 val scale = maxDimension.toFloat() / maxOf(fullBitmap.width, fullBitmap.height)
                 val targetW = (fullBitmap.width * scale).toInt().coerceAtLeast(1)
                 val targetH = (fullBitmap.height * scale).toInt().coerceAtLeast(1)
-                Bitmap.createScaledBitmap(fullBitmap, targetW, targetH, true)
+                val scaled = Bitmap.createScaledBitmap(fullBitmap, targetW, targetH, true)
+                if (scaled !== fullBitmap) {
+                    fullBitmap.recycle()
+                }
+                scaled
             } else {
                 fullBitmap
             }
