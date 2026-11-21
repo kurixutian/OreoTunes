@@ -7,9 +7,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -33,16 +33,15 @@ fun AddToPlaylistDialog(
     onPlaylistSelected: (Playlist, Song) -> Unit,
     onCreateNewPlaylist: () -> Unit
 ) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+    LiquidGlassModal(
+        onDismissRequest = onDismiss
     ) {
+        val isLight = MaterialTheme.colorScheme.background.red > 0.6f
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.90f)
                 .wrapContentHeight()
-                .clip(RoundedCornerShape(26.dp))
-                .background(Color(0xFF141724))
+                .liquidGlassSurface(isLight = isLight, shape = RoundedCornerShape(26.dp))
                 .padding(22.dp)
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -105,7 +104,7 @@ fun AddToPlaylistDialog(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Rounded.QueueMusic, contentDescription = null, tint = Color.White.copy(alpha = 0.7f))
+                                    Icon(Icons.AutoMirrored.Rounded.QueueMusic, contentDescription = null, tint = Color.White.copy(alpha = 0.7f))
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Text(
                                         text = playlist.name,

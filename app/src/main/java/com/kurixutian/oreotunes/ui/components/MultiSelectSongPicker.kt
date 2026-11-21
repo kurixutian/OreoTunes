@@ -43,16 +43,15 @@ fun MultiSelectSongPickerDialog(
         }
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+    LiquidGlassModal(
+        onDismissRequest = onDismiss
     ) {
+        val isLight = MaterialTheme.colorScheme.background.red > 0.6f
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.94f)
                 .fillMaxHeight(0.85f)
-                .clip(RoundedCornerShape(26.dp))
-                .background(Color(0xFF141724))
+                .liquidGlassSurface(isLight = isLight, shape = RoundedCornerShape(26.dp))
                 .padding(20.dp)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {

@@ -43,16 +43,15 @@ fun CreateEditPlaylistDialog(
         }
     )
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+    LiquidGlassModal(
+        onDismissRequest = onDismiss
     ) {
+        val isLight = MaterialTheme.colorScheme.background.red > 0.6f
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
                 .wrapContentHeight()
-                .clip(RoundedCornerShape(26.dp))
-                .background(Color(0xFF141724))
+                .liquidGlassSurface(isLight = isLight, shape = RoundedCornerShape(26.dp))
                 .padding(24.dp)
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {

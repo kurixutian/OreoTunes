@@ -4,12 +4,19 @@ import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -22,6 +29,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -36,77 +44,75 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.kyant.backdrop.Backdrop
 import com.kurixutian.oreotunes.domain.model.Song
 import com.kurixutian.oreotunes.ui.theme.Manrope
+import kotlinx.coroutines.launch
 
 @Composable
 fun MiniPlayer(
     song: Song,
     isPlaying: Boolean,
     progressProvider: () -> Float,
+    backdrop: Backdrop,
+    isLightMode: Boolean = false,
     primaryColor: Color = Color.White,
     onPlayPause: () -> Unit,
     onFavorite: () -> Unit,
+    onSkipNext: () -> Unit = {},
+    onSkipPrev: () -> Unit = {},
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(22.dp)
+    val coroutineScope = rememberCoroutineScope()
+    val offsetX = remember { Animatable(0f) }
+
+    val draggableState = rememberDraggableState { delta ->
+        coroutineScope.launch {
+            offsetX.snapTo(offsetX.value + delta)
+        }
+    }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp)
             .height(64.dp)
-            .clip(shape)
+            .liquidGlassChrome(backdrop = backdrop, isLight = isLightMode)
+            .draggable(
+                state = draggableState,
+                orientation = Orientation.Horizontal,
+                onDragStopped = { velocity ->
+                    coroutineScope.launch {
+                        val currentOffset = offsetX.value
+                        val threshold = 90f
+                        if (currentOffset > threshold || velocity > 450f) {
+                            offsetX.animateTo(220f, tween(140))
+                            onSkipPrev()
+                            offsetX.snapTo(-140f)
+                            offsetX.animateTo(0f, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow))
+                        } else if (currentOffset < -threshold || velocity < -450f) {
+                            offsetX.animateTo(-220f, tween(140))
+                            onSkipNext()
+                            offsetX.snapTo(140f)
+                            offsetX.animateTo(0f, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow))
+                        } else {
+                            offsetX.animateTo(0f, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow))
+                        }
+                    }
+                }
+            )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick
             )
-            .border(
-                width = 0.5.dp,
-                color = Color.White.copy(alpha = 0.12f),
-                shape = shape
-            )
     ) {
-        // 1. Hardware Accelerated Blurred Artwork Layer
-        if (song.albumArtUri != null) {
-            AsyncImage(
-                model = song.albumArtUri,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(shape)
-                    .graphicsLayer {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            renderEffect = RenderEffect
-                                .createBlurEffect(45f, 45f, Shader.TileMode.CLAMP)
-                                .asComposeRenderEffect()
-                        }
-                    }
-                    .blur(if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) 24.dp else 0.dp)
-            )
-        }
-
-        // 2. Translucent Glass Tint Overlay
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFF0F121E).copy(alpha = 0.62f),
-                            Color(0xFF080A12).copy(alpha = 0.78f)
-                        )
-                    )
-                )
-        )
 
         // 3. Track Details & Transport Controls
         Row(
             modifier = Modifier
                 .fillMaxSize()
+                .graphicsLayer { translationX = offsetX.value }
                 .padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -149,7 +155,7 @@ fun MiniPlayer(
             // Favorite Button
             IconButton(
                 onClick = onFavorite,
-                modifier = Modifier.size(38.dp)
+                modifier = Modifier.size(48.dp)
             ) {
                 Icon(
                     imageVector = if (song.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
@@ -160,25 +166,30 @@ fun MiniPlayer(
             }
 
             // Play / Pause Glass Action Button
-            FilledIconButton(
-                onClick = onPlayPause,
-                shape = CircleShape,
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = Color.White.copy(alpha = 0.95f),
-                    contentColor = Color(0xFF0F121E)
-                ),
-                modifier = Modifier.size(38.dp)
+            Box(
+                modifier = Modifier.size(48.dp),
+                contentAlignment = Alignment.Center
             ) {
+                FilledIconButton(
+                    onClick = onPlayPause,
+                    shape = CircleShape,
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = Color.White.copy(alpha = 0.95f),
+                        contentColor = Color(0xFF0F121E)
+                    ),
+                    modifier = Modifier.size(38.dp)
+                ) {
                 AnimatedContent(
                     targetState = isPlaying,
                     transitionSpec = { fadeIn() togetherWith fadeOut() },
                     label = "miniPlayPause"
                 ) { playing ->
-                    Icon(
-                        imageVector = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = if (playing) "Pause" else "Play",
-                        modifier = Modifier.size(22.dp)
-                    )
+                        Icon(
+                            imageVector = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = if (playing) "Pause" else "Play",
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 }
             }
         }

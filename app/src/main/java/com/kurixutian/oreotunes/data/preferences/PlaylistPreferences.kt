@@ -30,6 +30,7 @@ class PlaylistPreferences(context: Context) {
         private const val KEY_FAVORITES = "user_favorites_set_v1"
         private const val KEY_SELECTED_FOLDERS = "user_selected_folders_set_v1"
         private const val KEY_CROSSFADE_ENABLED = "crossfade_enabled"
+        private const val KEY_LIQUID_GLASS_ENABLED = "liquid_glass_enabled"
         private const val KEY_CROSSFADE_DURATION = "crossfade_duration_sec"
         private const val KEY_HERO_REFRESH_HOURS = "hero_refresh_hours"
         private const val KEY_HERO_LAST_REFRESH_TIME = "hero_last_refresh_time_ms_v1"
@@ -122,6 +123,9 @@ class PlaylistPreferences(context: Context) {
 
     fun isCrossfadeEnabled(): Boolean = prefs.getBoolean(KEY_CROSSFADE_ENABLED, true)
     fun saveCrossfadeEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_CROSSFADE_ENABLED, enabled).apply()
+
+    fun isLiquidGlassEnabled(): Boolean = prefs.getBoolean(KEY_LIQUID_GLASS_ENABLED, true)
+    fun saveLiquidGlassEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_LIQUID_GLASS_ENABLED, enabled).apply()
 
     fun getCrossfadeDurationSec(): Int = prefs.getInt(KEY_CROSSFADE_DURATION, 8)
     fun saveCrossfadeDurationSec(sec: Int) = prefs.edit().putInt(KEY_CROSSFADE_DURATION, sec).apply()

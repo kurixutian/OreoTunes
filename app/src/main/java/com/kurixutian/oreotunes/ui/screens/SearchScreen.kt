@@ -530,7 +530,7 @@ fun SearchScreen(
         if (matchedSongs.size > 8) {
             ModernGlassScrollBar(
                 listState = listState,
-                itemsList = matchedSongs.map { it.title },
+                titleProvider = { idx -> if (idx in matchedSongs.indices) matchedSongs[idx].title else "" },
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .padding(end = 2.dp, top = 80.dp, bottom = 140.dp)

@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -26,7 +27,9 @@ import com.kurixutian.oreotunes.domain.model.Song
 import com.kurixutian.oreotunes.ui.components.AlphabeticalSongRow
 import com.kurixutian.oreotunes.ui.components.ArtworkThumbnail
 import com.kurixutian.oreotunes.ui.components.GlassIconButton
+import com.kurixutian.oreotunes.ui.components.LiquidGlassModal
 import com.kurixutian.oreotunes.ui.components.ModernGlassScrollBar
+import com.kurixutian.oreotunes.ui.components.liquidGlassSurface
 import com.kurixutian.oreotunes.ui.theme.Manrope
 
 @Composable
@@ -120,7 +123,7 @@ fun PlaylistDetailScreen(
                                 .background(Color.White.copy(alpha = 0.08f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Rounded.QueueMusic, contentDescription = null, tint = Color.White, modifier = Modifier.size(64.dp))
+                            Icon(Icons.AutoMirrored.Rounded.QueueMusic, contentDescription = null, tint = Color.White, modifier = Modifier.size(64.dp))
                         }
                     }
 
@@ -150,31 +153,67 @@ fun PlaylistDetailScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        GlassIconButton(
-                            icon = Icons.Rounded.PlayArrow,
-                            contentDescription = "Play",
-                            size = 46.dp,
-                            iconSize = 24.dp,
-                            isPrimary = true,
-                            onClick = { onPlayAll(playlistSongs) }
-                        )
-                        GlassIconButton(
-                            icon = Icons.Rounded.Shuffle,
-                            contentDescription = "Shuffle",
-                            size = 46.dp,
-                            iconSize = 20.dp,
-                            onClick = { onShuffleAll(playlistSongs) }
-                        )
-                        GlassIconButton(
-                            icon = Icons.Rounded.Add,
-                            contentDescription = "Add Songs",
-                            size = 46.dp,
-                            iconSize = 22.dp,
-                            onClick = { onAddSongs(playlist) }
-                        )
+                        Button(
+                            onClick = { onPlayAll(playlistSongs) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.White,
+                                contentColor = Color.Black
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp)
+                        ) {
+                            Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(22.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Play All",
+                                fontFamily = Manrope,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.5.sp
+                            )
+                        }
+
+                        Button(
+                            onClick = { onShuffleAll(playlistSongs) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.White.copy(alpha = 0.14f),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp)
+                        ) {
+                            Icon(Icons.Rounded.Shuffle, contentDescription = null, modifier = Modifier.size(19.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Shuffle All",
+                                fontFamily = Manrope,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.5.sp
+                            )
+                        }
+
+                        if (!playlist.name.equals("Favorites", ignoreCase = true)) {
+                            FilledIconButton(
+                                onClick = { onAddSongs(playlist) },
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = Color.White.copy(alpha = 0.14f),
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier.size(46.dp)
+                            ) {
+                                Icon(Icons.Rounded.Add, contentDescription = "Add Songs", modifier = Modifier.size(22.dp))
+                            }
+                        }
                     }
                 }
             }
@@ -189,7 +228,11 @@ fun PlaylistDetailScreen(
                     )
                 }
             } else {
-                items(playlistSongs, key = { it.id }) { song ->
+                items(
+                    items = playlistSongs,
+                    key = { it.id },
+                    contentType = { "playlist_song_row" }
+                ) { song ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -221,7 +264,7 @@ fun PlaylistDetailScreen(
                                     }
                                 },
                                 enabled = index > 0,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.KeyboardArrowUp,
@@ -241,7 +284,7 @@ fun PlaylistDetailScreen(
                                     }
                                 },
                                 enabled = index < playlistSongs.lastIndex,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.KeyboardArrowDown,
@@ -263,7 +306,7 @@ fun PlaylistDetailScreen(
             ModernGlassScrollBar(
                 listState = listState,
                 headerOffsetCount = 2,
-                itemsList = playlistSongs.map { it.title },
+                titleProvider = { idx -> if (idx in playlistSongs.indices) playlistSongs[idx].title else "" },
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .padding(end = 2.dp, top = 80.dp, bottom = 140.dp)
@@ -272,48 +315,49 @@ fun PlaylistDetailScreen(
     }
 
     songPendingRemoval.value?.let { song ->
-        AlertDialog(
-            onDismissRequest = {
-                songPendingRemoval.value = null
-            },
-            title = {
+        val isLight = MaterialTheme.colorScheme.background.red > 0.6f
+        val dialogTextColor = if (isLight) Color(0xFF121520) else Color.White
+        LiquidGlassModal(
+            onDismissRequest = { songPendingRemoval.value = null }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth(0.88f)
+                    .liquidGlassSurface(isLight = isLight)
+                    .padding(22.dp)
+            ) {
                 Text(
                     text = "Remove from playlist?",
+                    style = MaterialTheme.typography.titleLarge,
                     fontFamily = Manrope,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = dialogTextColor
                 )
-            },
-            text = {
+                Spacer(modifier = Modifier.height(10.dp))
                 Text(
                     text = "\"${song.title}\" will be removed from \"${playlist.name}\". The song will remain in your library.",
-                    fontFamily = Manrope
+                    fontFamily = Manrope,
+                    color = dialogTextColor.copy(alpha = 0.78f)
                 )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onRemoveSong(playlist, song)
-                        songPendingRemoval.value = null
-                    }
+                Spacer(modifier = Modifier.height(18.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
                 ) {
-                    Text(
-                        text = "Remove",
-                        fontFamily = Manrope
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        songPendingRemoval.value = null
+                    TextButton(onClick = { songPendingRemoval.value = null }) {
+                        Text(text = "Cancel", fontFamily = Manrope)
                     }
-                ) {
-                    Text(
-                        text = "Cancel",
-                        fontFamily = Manrope
-                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    TextButton(
+                        onClick = {
+                            onRemoveSong(playlist, song)
+                            songPendingRemoval.value = null
+                        }
+                    ) {
+                        Text(text = "Remove", fontFamily = Manrope)
+                    }
                 }
             }
-        )
+        }
     }
 }

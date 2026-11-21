@@ -3,10 +3,17 @@ package com.kurixutian.oreotunes.ui.screens
 import android.content.Intent
 import android.os.Build
 import android.view.WindowManager
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,18 +33,29 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kurixutian.oreotunes.ui.components.liquidGlassChrome
+import com.kurixutian.oreotunes.R
 import com.kurixutian.oreotunes.data.model.Playlist
 import com.kurixutian.oreotunes.data.repository.AlbumGroup
 import com.kurixutian.oreotunes.data.repository.ArtistGroup
@@ -47,12 +65,18 @@ import com.kurixutian.oreotunes.data.repository.GeminiMoodEngine
 import com.kurixutian.oreotunes.domain.model.Song
 import com.kurixutian.oreotunes.ui.components.AlphabeticalSongRow
 import com.kurixutian.oreotunes.ui.components.ArtworkThumbnail
+import com.kurixutian.oreotunes.ui.components.LiquidGlassModal
+import com.kurixutian.oreotunes.ui.components.LocalLiquidGlassBackdrop
+import com.kurixutian.oreotunes.ui.components.LocalLiquidGlassEnabled
+import com.kurixutian.oreotunes.ui.components.liquidGlassSurface
 import com.kurixutian.oreotunes.ui.components.CompactTrackRow
 import com.kurixutian.oreotunes.ui.components.GlassIconButton
 import com.kurixutian.oreotunes.ui.components.ModernGlassScrollBar
 import com.kurixutian.oreotunes.ui.components.SongCardItem
 import com.kurixutian.oreotunes.ui.theme.Manrope
+import com.kurixutian.oreotunes.ui.utils.homeGreetingResource
 import kotlinx.coroutines.launch
+import java.time.LocalTime
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -68,6 +92,7 @@ fun HomeScreen(
     quickPickMode: String,
     heroRefreshHours: Int,
     palette: ArtworkPalette? = null,
+    backdrop: Backdrop,
     onQuickPickModeSelected: (String) -> Unit,
     onSongClick: (Song, List<Song>?) -> Unit,
     onSongLongClick: (Song) -> Unit,
@@ -113,61 +138,47 @@ fun HomeScreen(
         count
     }
 
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val backdropFillColor = when {
+        isLight -> Color(0xFFF7F8FC)
+        palette != null -> palette.darkBackground
+        else -> Color(0xFF0A0C12)
+    }
+    val headerBackdrop = rememberLayerBackdrop {
+        drawRect(backdropFillColor)
+        if (!isLight && palette != null) {
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        palette.surfaceColor.copy(alpha = 0.65f),
+                        palette.accent.copy(alpha = 0.35f)
+                    )
+                )
+            )
+        }
+        drawContent()
+    }
+    val glassEnabled = LocalLiquidGlassEnabled.current
     Box(
         modifier = modifier
-            .fillMaxSize()
-            .statusBarsPadding()
+            .fillMaxSize(),
+        contentAlignment = Alignment.TopCenter
     ) {
         LazyColumn(
             state = homeListState,
             modifier = Modifier
+                .widthIn(max = 840.dp)
                 .fillMaxSize()
-                .padding(horizontal = 18.dp),
-            contentPadding = PaddingValues(bottom = 180.dp),
+                .then(if (glassEnabled) Modifier.layerBackdrop(headerBackdrop) else Modifier),
+            contentPadding = PaddingValues(
+                top = 84.dp + statusBarTop,
+                bottom = 180.dp,
+                start = 18.dp,
+                end = 18.dp
+            ),
             verticalArrangement = Arrangement.spacedBy(22.dp)
         ) {
-            // 1. Header Bar with Shuffle All & Play All Buttons
-            item {
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Discover",
-                        style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp, fontFamily = Manrope),
-                        fontWeight = FontWeight.Bold,
-                        color = contentTextColor
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        GlassIconButton(icon = Icons.Rounded.Shuffle, contentDescription = "Shuffle All", size = 38.dp, iconSize = 18.dp, onClick = onShuffleAll)
-                        GlassIconButton(
-                            icon = Icons.Rounded.PlayArrow,
-                            contentDescription = "Play All",
-                            size = 38.dp,
-                            iconSize = 20.dp,
-                            isPrimary = true,
-                            primaryColor = dynamicPrimary,
-                            onClick = onPlayAll
-                        )
-                        GlassIconButton(
-                            icon = Icons.Rounded.AutoAwesome,
-                            contentDescription = "AI Mix",
-                            size = 38.dp,
-                            iconSize = 18.dp,
-                            onClick = { showMoodMixDialog = true }
-                        )
-                        GlassIconButton(icon = Icons.Rounded.BarChart, contentDescription = "Stats", size = 38.dp, iconSize = 18.dp, onClick = onOpenStats)
-                        GlassIconButton(icon = Icons.Rounded.Settings, contentDescription = "Settings", size = 38.dp, iconSize = 18.dp, onClick = onOpenSettings)
-                    }
-                }
-            }
-
-            // 2. Featured Big Card Carousel
+            // 1. Featured Big Card Carousel
             if (heroAlbums.isNotEmpty()) {
                 item {
                     LazyRow(
@@ -247,7 +258,7 @@ fun HomeScreen(
                 }
             }
 
-            // 3. Dedicated Gemini AI Mood & Trip Mix Card
+            // 2. AI Playlist
             item {
                 val mixCardBg = if (isLight) {
                     Brush.linearGradient(
@@ -299,7 +310,7 @@ fun HomeScreen(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
                                     Text(
-                                        text = "Gemini Mood & Trip Mix",
+                                        text = "AI Playlist",
                                         fontFamily = Manrope,
                                         fontWeight = FontWeight.ExtraBold,
                                         fontSize = 16.sp,
@@ -324,32 +335,9 @@ fun HomeScreen(
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Add,
-                                    contentDescription = "Create Mix",
+                                    contentDescription = "Create Playlist",
                                     modifier = Modifier.size(20.dp)
                                 )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        val quickVibes = listOf("Night Drive", "Chill Vibe", "Gym Pump", "Roadtrip", "Lofi Focus")
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(quickVibes) { vibe ->
-                                Box(
-                                    modifier = Modifier
-                                        .clip(CircleShape)
-                                        .background(if (isLight) Color.Black.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.10f))
-                                        .clickable { showMoodMixDialog = true }
-                                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                                ) {
-                                    Text(
-                                        text = "✨ $vibe",
-                                        fontFamily = Manrope,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = contentTextColor
-                                    )
-                                }
                             }
                         }
                     }
@@ -605,36 +593,57 @@ fun HomeScreen(
             }
 
             // 8. Complete Library Tracks Section
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "All Tracks (${sortedSongs.size})",
-                        style = MaterialTheme.typography.titleLarge.copy(fontSize = 19.sp, fontFamily = Manrope),
-                        fontWeight = FontWeight.Bold,
-                        color = contentTextColor
+            if (sortedSongs.isNotEmpty()) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "All Tracks (${sortedSongs.size})",
+                            style = MaterialTheme.typography.titleLarge.copy(fontSize = 19.sp, fontFamily = Manrope),
+                            fontWeight = FontWeight.Bold,
+                            color = contentTextColor
+                        )
+                    }
+                }
+
+                items(
+                    items = sortedSongs,
+                    key = { it.id },
+                    contentType = { "alphabetical_song_row" }
+                ) { song ->
+                    AlphabeticalSongRow(
+                        song = song,
+                        onClick = { onSongClick(song, sortedSongs) },
+                        onLongClick = { onSongLongClick(song) },
+                        onOptionsClick = { onSongLongClick(song) }
                     )
                 }
             }
-
-            items(sortedSongs, key = { it.id }) { song ->
-                AlphabeticalSongRow(
-                    song = song,
-                    onClick = { onSongClick(song, sortedSongs) },
-                    onLongClick = { onSongLongClick(song) },
-                    onOptionsClick = { onSongLongClick(song) }
-                )
-            }
         }
+
+        HomePinnedHeader(
+            listState = homeListState,
+            backdrop = headerBackdrop,
+            isLight = isLight,
+            dynamicPrimary = dynamicPrimary,
+            contentTextColor = contentTextColor,
+            onShuffleAll = onShuffleAll,
+            onPlayAll = onPlayAll,
+            onOpenStats = onOpenStats,
+            onOpenSettings = onOpenSettings,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .zIndex(1f)
+        )
 
         if (sortedSongs.size > 8) {
             ModernGlassScrollBar(
                 listState = homeListState,
                 headerOffsetCount = headerCount,
-                itemsList = sortedSongs.map { it.title },
+                titleProvider = { idx -> if (idx in sortedSongs.indices) sortedSongs[idx].title else "" },
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .fillMaxHeight(0.65f)
@@ -643,26 +652,181 @@ fun HomeScreen(
         }
     }
 
-    // Gemini Mood & Trip Mix Dialog
+    // AI Playlist dialog
     if (showMoodMixDialog) {
-        GeminiMoodDialog(
-            availableSongs = songs,
-            moodEngine = moodEngine,
-            palette = palette,
-            onPlayMix = { mixResult: GeminiMixResult ->
-                mixResult.songs.firstOrNull()?.let { firstSong ->
-                    onSongClick(firstSong, mixResult.songs)
-                }
-                showMoodMixDialog = false
-            },
-            onSaveAsPlaylist = { mixResult: GeminiMixResult ->
-                onCreatePlaylistWithSongs(
-                    mixResult.title,
-                    mixResult.description,
-                    mixResult.songs.map { it.id }
+        CompositionLocalProvider(LocalLiquidGlassBackdrop provides headerBackdrop) {
+            GeminiMoodDialog(
+                availableSongs = songs,
+                moodEngine = moodEngine,
+                palette = palette,
+                onPlayMix = { mixResult: GeminiMixResult ->
+                    mixResult.songs.firstOrNull()?.let { firstSong ->
+                        onSongClick(firstSong, mixResult.songs)
+                    }
+                    showMoodMixDialog = false
+                },
+                onSaveAsPlaylist = { mixResult: GeminiMixResult ->
+                    onCreatePlaylistWithSongs(
+                        mixResult.title,
+                        mixResult.description,
+                        mixResult.songs.map { it.id }
+                    )
+                },
+                onDismiss = { showMoodMixDialog = false }
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomePinnedHeader(
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    backdrop: Backdrop,
+    isLight: Boolean,
+    dynamicPrimary: Color,
+    contentTextColor: Color,
+    onShuffleAll: () -> Unit,
+    onPlayAll: () -> Unit,
+    onOpenStats: () -> Unit,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val hasScrolled by remember(listState) {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+        }
+    }
+    val greeting = stringResource(homeGreetingResource(LocalTime.now().hour))
+    val actionsScale by animateFloatAsState(
+        targetValue = if (hasScrolled) 0.90f else 1f,
+        animationSpec = tween(220),
+        label = "headerActionsScale"
+    )
+
+    val glassAlpha by animateFloatAsState(
+        targetValue = if (hasScrolled) 1f else 0f,
+        animationSpec = tween(260),
+        label = "headerGlassAlpha"
+    )
+
+    Box(modifier = modifier.fillMaxWidth()) {
+        if (glassAlpha > 0.01f) {
+            val headerShape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer {
+                        alpha = glassAlpha
+                        translationY = (1f - glassAlpha) * -40f
+                    }
+                    .liquidGlassChrome(
+                        backdrop = backdrop,
+                        isLight = isLight,
+                        shape = headerShape,
+                        fallbackShape = headerShape,
+                        addBorder = false
+                    )
+            )
+        }
+
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 18.dp, vertical = 10.dp)
+        ) {
+            val isCompact = maxWidth < 400.dp
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = greeting,
+                    style = MaterialTheme.typography.headlineLarge.copy(
+                        fontSize = if (isCompact) 22.sp else 30.sp,
+                        fontFamily = Manrope
+                    ),
+                    fontWeight = FontWeight.Bold,
+                    color = contentTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = if (isCompact) 8.dp else 12.dp)
                 )
-            },
-            onDismiss = { showMoodMixDialog = false }
+                HomeHeaderActions(
+                    dynamicPrimary = dynamicPrimary,
+                    isLight = isLight,
+                    onShuffleAll = onShuffleAll,
+                    onPlayAll = onPlayAll,
+                    onOpenStats = onOpenStats,
+                    onOpenSettings = onOpenSettings,
+                    buttonSize = if (isCompact) 38.dp else 40.dp,
+                    iconSize = if (isCompact) 18.dp else 19.dp,
+                    playIconSize = if (isCompact) 20.dp else 22.dp,
+                    horizontalSpacing = if (isCompact) 4.dp else 10.dp,
+                    horizontalPadding = 0.dp,
+                    modifier = Modifier.graphicsLayer {
+                        scaleX = actionsScale
+                        scaleY = actionsScale
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeHeaderActions(
+    dynamicPrimary: Color,
+    isLight: Boolean,
+    onShuffleAll: () -> Unit,
+    onPlayAll: () -> Unit,
+    onOpenStats: () -> Unit,
+    onOpenSettings: () -> Unit,
+    buttonSize: Dp,
+    iconSize: Dp,
+    playIconSize: Dp,
+    horizontalSpacing: Dp,
+    horizontalPadding: Dp,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .padding(horizontal = horizontalPadding, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(horizontalSpacing),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        GlassIconButton(
+            icon = Icons.Rounded.Shuffle,
+            contentDescription = "Shuffle All",
+            size = buttonSize,
+            iconSize = iconSize,
+            onClick = onShuffleAll
+        )
+        GlassIconButton(
+            icon = Icons.Rounded.PlayArrow,
+            contentDescription = "Play All",
+            size = buttonSize,
+            iconSize = playIconSize,
+            isPrimary = true,
+            primaryColor = dynamicPrimary,
+            onClick = onPlayAll
+        )
+        GlassIconButton(
+            icon = Icons.Rounded.BarChart,
+            contentDescription = "Listening Stats",
+            size = buttonSize,
+            iconSize = iconSize,
+            onClick = onOpenStats
+        )
+        GlassIconButton(
+            icon = Icons.Rounded.Settings,
+            contentDescription = "Settings",
+            size = buttonSize,
+            iconSize = iconSize,
+            onClick = onOpenSettings
         )
     }
 }
@@ -697,26 +861,15 @@ fun GeminiMoodDialog(
 
     val dynamicPrimary = palette?.accent ?: Color(0xFF64D2FF)
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+    LiquidGlassModal(
+        onDismissRequest = onDismiss
     ) {
-        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
-        SideEffect {
-            dialogWindow?.let { window ->
-                window.setDimAmount(0.55f)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                    window.attributes.blurBehindRadius = 48
-                }
-            }
-        }
+        val isLight = MaterialTheme.colorScheme.background.red > 0.6f
 
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
-                .clip(RoundedCornerShape(28.dp))
-                .background((palette?.surfaceColor ?: Color(0xFF141724)).copy(alpha = 0.95f))
+                .liquidGlassSurface(isLight = isLight)
         ) {
             LazyColumn(
                 modifier = Modifier
@@ -732,7 +885,7 @@ fun GeminiMoodDialog(
                     ) {
                         Column {
                             Text(
-                                text = "Gemini Mood DJ",
+                                text = "Mood DJ",
                                 style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, fontFamily = Manrope),
                                 color = Color.White,
                                 fontWeight = FontWeight.ExtraBold
@@ -765,7 +918,7 @@ fun GeminiMoodDialog(
                                 .padding(14.dp)
                         ) {
                             Text(
-                                text = "Enter Gemini API Key",
+                                text = "Enter API Key",
                                 fontFamily = Manrope,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
@@ -775,7 +928,7 @@ fun GeminiMoodDialog(
                             OutlinedTextField(
                                 value = inputApiKey,
                                 onValueChange = { inputApiKey = it },
-                                placeholder = { Text("Paste Gemini API Key...", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp) },
+                                placeholder = { Text("Paste API Key...", color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp) },
                                 singleLine = true,
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedTextColor = Color.White,
@@ -985,7 +1138,7 @@ fun GeminiMoodDialog(
                         if (isLoading) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.Black, strokeWidth = 2.dp)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Gemini is curating...", fontFamily = Manrope, fontWeight = FontWeight.Bold)
+                            Text("Curating...", fontFamily = Manrope, fontWeight = FontWeight.Bold)
                         } else {
                             Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))

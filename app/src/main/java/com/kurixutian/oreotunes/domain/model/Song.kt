@@ -1,7 +1,9 @@
 package com.kurixutian.oreotunes.domain.model
 
 import android.net.Uri
+import androidx.compose.runtime.Immutable
 
+@Immutable
 data class Song(
     val id: Long,
     val title: String,
@@ -16,12 +18,14 @@ data class Song(
     val filePath: String = ""
 )
 
+@Immutable
 data class FolderInfo(
     val path: String,
     val name: String,
     val songCount: Int
 )
 
+@Immutable
 data class AlbumInfo(
     val name: String,
     val artist: String,
@@ -29,6 +33,7 @@ data class AlbumInfo(
     val songCount: Int
 )
 
+@Immutable
 data class ArtistInfo(
     val name: String,
     val songCount: Int,

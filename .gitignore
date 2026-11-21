@@ -163,3 +163,10 @@ desktop.ini
 *.backup
 *.bad-insertion
 *.damaged.backup.kt
+
+# Agent / session scratch artifacts
+.impeccable/
+.superpowers/
+codex-session-*.md
+item.id
+*-preview.png

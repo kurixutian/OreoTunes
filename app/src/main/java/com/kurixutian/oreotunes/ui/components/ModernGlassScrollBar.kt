@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -38,6 +39,7 @@ fun ModernGlassScrollBar(
     listState: LazyListState,
     modifier: Modifier = Modifier,
     itemsList: List<String> = emptyList(),
+    titleProvider: ((Int) -> String)? = null,
     headerOffsetCount: Int = 0,
     thumbWidth: Dp = 5.dp,
     touchTargetWidth: Dp = 48.dp,
@@ -68,25 +70,13 @@ fun ModernGlassScrollBar(
         }
     }
 
-    val totalItems = listState.layoutInfo.totalItemsCount
-    val firstVisibleIndex = listState.firstVisibleItemIndex
-    val firstVisibleOffset = listState.firstVisibleItemScrollOffset
+    val totalItems by remember { derivedStateOf { listState.layoutInfo.totalItemsCount } }
 
     val thumbHeightDp = remember(barHeightPx, totalItems) {
         if (barHeightPx <= 0f || totalItems <= 0) 42.dp
         else {
             val fraction = (8f / totalItems.toFloat()).coerceIn(0.08f, 0.35f)
             with(density) { max(barHeightPx * fraction, 36.dp.toPx()).toDp() }
-        }
-    }
-
-    val thumbOffsetDp = remember(barHeightPx, firstVisibleIndex, firstVisibleOffset, totalItems, thumbHeightDp) {
-        if (barHeightPx <= 0f || totalItems <= 1) 0.dp
-        else {
-            val thumbHeightPx = with(density) { thumbHeightDp.toPx() }
-            val scrollableTrackPx = max(1f, barHeightPx - thumbHeightPx)
-            val currentProgress = ((firstVisibleIndex.toFloat() + (firstVisibleOffset.toFloat() / 300f).coerceIn(0f, 0.99f)) / max(1f, (totalItems - 1).toFloat())).coerceIn(0f, 1f)
-            with(density) { (currentProgress * scrollableTrackPx).toDp() }
         }
     }
 
@@ -98,7 +88,10 @@ fun ModernGlassScrollBar(
         val targetIndex = (progress * (totalItems - 1)).toInt().coerceIn(0, totalItems - 1)
 
         val songItemIndex = targetIndex - headerOffsetCount
-        if (itemsList.isNotEmpty() && songItemIndex in itemsList.indices) {
+        if (titleProvider != null && songItemIndex >= 0) {
+            val title = titleProvider(songItemIndex).trim()
+            activePreviewLetter = if (title.isNotEmpty()) title.take(1).uppercase() else "#"
+        } else if (itemsList.isNotEmpty() && songItemIndex in itemsList.indices) {
             val title = itemsList[songItemIndex].trim()
             activePreviewLetter = if (title.isNotEmpty()) title.take(1).uppercase() else "#"
         } else {
@@ -189,12 +182,24 @@ fun ModernGlassScrollBar(
                     .background(trackColor)
             )
 
-            // Scrollbar thumb indicator (stays visible and responsive while dragging)
+            // Scrollbar thumb indicator (draw-phase translation for 60/120fps smooth scrolling)
             Box(
                 modifier = Modifier
                     .padding(end = 4.dp)
                     .align(Alignment.TopEnd)
-                    .offset(y = thumbOffsetDp)
+                    .graphicsLayer {
+                        val total = listState.layoutInfo.totalItemsCount
+                        if (barHeightPx > 0f && total > 1) {
+                            val thumbHeightPx = thumbHeightDp.toPx()
+                            val scrollableTrackPx = max(1f, barHeightPx - thumbHeightPx)
+                            val fvIndex = listState.firstVisibleItemIndex
+                            val fvOffset = listState.firstVisibleItemScrollOffset
+                            val currentProgress = ((fvIndex.toFloat() + (fvOffset.toFloat() / 300f).coerceIn(0f, 0.99f)) / (total - 1).toFloat()).coerceIn(0f, 1f)
+                            translationY = currentProgress * scrollableTrackPx
+                        } else {
+                            translationY = 0f
+                        }
+                    }
                     .width(if (isHoldingThumb) thumbWidth + 2.dp else thumbWidth)
                     .height(thumbHeightDp)
                     .clip(CircleShape)

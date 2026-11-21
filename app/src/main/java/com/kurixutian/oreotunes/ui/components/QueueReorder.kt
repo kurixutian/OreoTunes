@@ -138,7 +138,7 @@ fun QueueReorder(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .animateItemPlacement()
+                    .animateItem(fadeInSpec = null, fadeOutSpec = null)
                     .graphicsLayer {
                         translationY =
                             if (isDragging) dragOffsetY else 0f

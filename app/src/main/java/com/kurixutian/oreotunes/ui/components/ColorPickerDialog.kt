@@ -125,14 +125,13 @@ fun ColorPickerDialog(
         hexInput = toHex(preset)
     }
 
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
+    LiquidGlassModal(onDismissRequest = onDismiss) {
+        val isLight = MaterialTheme.colorScheme.background.red > 0.6f
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxWidth(0.90f)
                 .padding(4.dp)
+                .liquidGlassSurface(isLight = isLight, shape = RoundedCornerShape(24.dp))
         ) {
             Column(
                 modifier = Modifier.padding(20.dp),

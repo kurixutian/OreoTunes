@@ -87,46 +87,7 @@ fun NowPlayingArtwork(
                 modifier = Modifier.fillMaxSize()
             ) { page ->
 
-                val pageSong =
-                    activeQueue.getOrNull(page)
-
-                val isCurrentPage =
-                    page == pagerState.currentPage
-
-                val pageOffset =
-                    abs(
-                        (pagerState.currentPage - page) +
-                            pagerState.currentPageOffsetFraction
-                    )
-
-                val targetScale =
-                    lerp(
-                        start = 0.88f,
-                        stop = 1.0f,
-                        fraction =
-                            (1f -
-                                pageOffset.coerceIn(
-                                    0f,
-                                    1f
-                                ))
-                    ) *
-                        if (isCurrentPage) {
-                            artworkPressScale.value
-                        } else {
-                            1.0f
-                        }
-
-                val targetAlpha =
-                    lerp(
-                        start = 0.40f,
-                        stop = 1.0f,
-                        fraction =
-                            (1f -
-                                pageOffset.coerceIn(
-                                    0f,
-                                    1f
-                                ))
-                    )
+                val pageSong = activeQueue.getOrNull(page)
 
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -134,19 +95,33 @@ fun NowPlayingArtwork(
                 ) {
                     Box(
                         modifier = Modifier
-                            .fillMaxSize(
-                                fraction = scaleFraction
-                            )
+                            .fillMaxSize(fraction = scaleFraction)
                             .aspectRatio(1f)
                             .graphicsLayer {
-                                scaleX = targetScale
-                                scaleY = targetScale
-                                alpha = targetAlpha
+                                val pageOffset = abs(
+                                    (pagerState.currentPage - page) +
+                                        pagerState.currentPageOffsetFraction
+                                )
+                                val factor = (1f - pageOffset.coerceIn(0f, 1f))
+                                val isCurrent = page == pagerState.currentPage
+                                val scale = lerp(
+                                    start = 0.88f,
+                                    stop = 1.0f,
+                                    fraction = factor
+                                ) * if (isCurrent) artworkPressScale.value else 1.0f
+
+                                val alphaVal = lerp(
+                                    start = 0.40f,
+                                    stop = 1.0f,
+                                    fraction = factor
+                                )
+
+                                scaleX = scale
+                                scaleY = scale
+                                alpha = alphaVal
                             }
                             .clip(artworkShape)
-                            .background(
-                                Color(0xFF1B1622)
-                            )
+                            .background(Color(0xFF1B1622))
                             .pointerInput(pageSong?.id) {
                                 detectTapGestures(
                                     onPress = {

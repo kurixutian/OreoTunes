@@ -14,6 +14,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -28,7 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
-import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.VolumeMute
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.*
@@ -55,18 +57,35 @@ import androidx.compose.ui.util.lerp
 import com.kurixutian.oreotunes.data.repository.ArtworkPalette
 import com.kurixutian.oreotunes.data.repository.LyricLine
 import com.kurixutian.oreotunes.data.repository.LyricsExtractor
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kurixutian.oreotunes.ui.components.liquidGlassEffects
 import com.kurixutian.oreotunes.domain.model.Song
 import com.kurixutian.oreotunes.ui.components.ArtworkThumbnail
 import com.kurixutian.oreotunes.ui.components.DynamicAtmosphereBackground
+import com.kurixutian.oreotunes.ui.components.LocalLiquidGlassEnabled
 import com.kurixutian.oreotunes.ui.components.QueueReorder
 import com.kurixutian.oreotunes.ui.components.NowPlayingArtwork
 import com.kurixutian.oreotunes.ui.theme.Manrope
+import com.kurixutian.oreotunes.ui.utils.VerticalGestureOutcome
+import com.kurixutian.oreotunes.ui.utils.resolveVerticalGestureOutcome
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import android.media.MediaMetadataRetriever
+import android.os.Build
+import java.util.Locale
 import kotlin.math.abs
 
 private val SmoothEasing = CubicBezierEasing(0.20f, 0.0f, 0.0f, 1.0f)
+
+data class TrackAudioTelemetry(
+    val badge: String = "",
+    val specsText: String = ""
+)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -268,6 +287,85 @@ fun NowPlayingScreen(
         parsedLyrics = LyricsExtractor.extractEmbeddedLyrics(context, visibleSong.contentUri)
     }
 
+    var audioTelemetry by remember { mutableStateOf(TrackAudioTelemetry()) }
+
+    LaunchedEffect(visibleSong.id, visibleSong.contentUri, visibleSong.filePath, visibleSong.size, visibleSong.duration) {
+        withContext(Dispatchers.IO) {
+            try {
+                val extension = (visibleSong.filePath.ifBlank { visibleSong.contentUri.path ?: "" })
+                    .substringAfterLast('.', "")
+                    .uppercase()
+
+                var mime: String? = null
+                var sampleRateStr: String? = null
+                var bitrateStr: String? = null
+
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(context, visibleSong.contentUri)
+                    mime = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        sampleRateStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_SAMPLERATE)
+                    }
+                    bitrateStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)
+                } catch (_: Exception) {
+                } finally {
+                    try { retriever.release() } catch (_: Exception) {}
+                }
+
+                val format = when {
+                    extension.isNotBlank() && extension.length in 2..5 -> extension
+                    mime?.contains("flac", ignoreCase = true) == true -> "FLAC"
+                    mime?.contains("wav", ignoreCase = true) == true -> "WAV"
+                    mime?.contains("mp4", ignoreCase = true) == true || mime?.contains("m4a", ignoreCase = true) == true -> "AAC"
+                    mime?.contains("mpeg", ignoreCase = true) == true || mime?.contains("mp3", ignoreCase = true) == true -> "MP3"
+                    mime?.contains("ogg", ignoreCase = true) == true || mime?.contains("vorbis", ignoreCase = true) == true -> "OGG"
+                    mime?.contains("opus", ignoreCase = true) == true -> "OPUS"
+                    else -> "AUDIO"
+                }
+
+                val isLossless = format in listOf("FLAC", "WAV", "ALAC", "AIFF", "APE", "DSD") ||
+                        (mime?.let { it.contains("flac") || it.contains("wav") || it.contains("alac") } == true)
+
+                val sampleRateHz = sampleRateStr?.toLongOrNull() ?: if (isLossless) 44100L else null
+                val formattedSampleRate = if (sampleRateHz != null) {
+                    if (sampleRateHz >= 1000) {
+                        String.format(Locale.US, "%.1f kHz", sampleRateHz / 1000.0)
+                    } else {
+                        "$sampleRateHz Hz"
+                    }
+                } else ""
+
+                val bitrateVal = bitrateStr?.toLongOrNull()
+                    ?: if (visibleSong.size > 0 && visibleSong.duration > 0) {
+                        (visibleSong.size * 8000L) / visibleSong.duration
+                    } else null
+
+                val formattedBitrate = if (bitrateVal != null && bitrateVal > 0) {
+                    "${bitrateVal / 1000} kbps"
+                } else ""
+
+                val formattedSize = if (visibleSong.size > 0) {
+                    String.format(Locale.US, "%.1f MB", visibleSong.size / (1024.0 * 1024.0))
+                } else ""
+
+                val badge = when {
+                    isLossless && (sampleRateHz ?: 0L) > 48000L -> "Hi-Res Lossless"
+                    isLossless -> "Lossless"
+                    bitrateVal != null && bitrateVal >= 320000L -> "High Quality"
+                    else -> format
+                }
+
+                val parts = listOf(format, formattedSampleRate, formattedBitrate, formattedSize).filter { it.isNotBlank() }
+                val specsText = if (parts.isNotEmpty()) parts.joinToString(" • ") else format
+
+                audioTelemetry = TrackAudioTelemetry(badge = badge, specsText = specsText)
+            } catch (_: Exception) {
+                audioTelemetry = TrackAudioTelemetry(badge = "", specsText = "")
+            }
+        }
+    }
+
     LaunchedEffect(isLyricsOpen) {
         if (isLyricsOpen) {
             triggerUserWakeUp()
@@ -324,6 +422,65 @@ fun NowPlayingScreen(
     val screenCascadeScale = (1f - (dismissProgress * 0.12f)).coerceIn(0.88f, 1f)
     val screenCornerRadius = (dismissProgress * 36.dp.value).dp
 
+    val glassEnabled = LocalLiquidGlassEnabled.current
+    val nowPlayingBackdrop = rememberLayerBackdrop {
+        drawRect(Color(0xFF0D0B12))
+        drawContent()
+    }
+    val mainVerticalDragModifier = Modifier.pointerInput(screenHeightPx) {
+        detectVerticalDragGestures(
+            onDragStart = {},
+            onVerticalDrag = { change, dragAmount ->
+                change.consume()
+                coroutineScope.launch {
+                    if (verticalDismissOffset.value > 0f) {
+                        verticalDismissOffset.snapTo((verticalDismissOffset.value + dragAmount).coerceAtLeast(0f))
+                    } else if (dragAmount < 0f || lyricsSheetProgress.value > 0f) {
+                        val deltaFraction = -dragAmount / screenHeightPx
+                        lyricsSheetProgress.snapTo((lyricsSheetProgress.value + deltaFraction).coerceIn(0f, 1f))
+                    } else if (dragAmount > 0f) {
+                        verticalDismissOffset.snapTo(verticalDismissOffset.value + dragAmount)
+                    }
+                }
+            },
+            onDragEnd = {
+                coroutineScope.launch {
+                    when (
+                        resolveVerticalGestureOutcome(
+                            dismissOffsetPx = verticalDismissOffset.value,
+                            screenHeightPx = screenHeightPx,
+                            lyricsProgress = lyricsSheetProgress.value,
+                            startedInLyrics = false
+                        )
+                    ) {
+                        VerticalGestureOutcome.COLLAPSE_NOW_PLAYING -> {
+                            verticalDismissOffset.animateTo(screenHeightPx, spring(dampingRatio = 0.82f, stiffness = 380f))
+                            onCollapse()
+                            delay(50)
+                            verticalDismissOffset.snapTo(0f)
+                        }
+                        VerticalGestureOutcome.OPEN_LYRICS -> {
+                            verticalDismissOffset.animateTo(0f, spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow))
+                            lyricsSheetProgress.animateTo(1f, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow))
+                        }
+                        VerticalGestureOutcome.CLOSE_LYRICS,
+                        VerticalGestureOutcome.SETTLE_MAIN -> {
+                            verticalDismissOffset.animateTo(0f, spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow))
+                            lyricsSheetProgress.animateTo(0f, spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow))
+                        }
+                    }
+                }
+            },
+            onDragCancel = {
+                coroutineScope.launch {
+                    verticalDismissOffset.animateTo(0f, spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow))
+                    val target = if (lyricsSheetProgress.value < 0.5f) 0f else 1f
+                    lyricsSheetProgress.animateTo(target, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow))
+                }
+            }
+        )
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -339,6 +496,11 @@ fun NowPlayingScreen(
                 indication = null
             ) { }
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (glassEnabled) Modifier.layerBackdrop(nowPlayingBackdrop) else Modifier)
+        ) {
         DynamicAtmosphereBackground(
             albumArtUri = visibleSong.albumArtUri,
             palette = palette,
@@ -362,59 +524,7 @@ fun NowPlayingScreen(
                 .blur(screenBackdropBlur)
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 8.dp)
-                .pointerInput(Unit) {
-                    detectVerticalDragGestures(
-                        onDragStart = {},
-                        onVerticalDrag = { change, dragAmount ->
-                            change.consume()
-                            coroutineScope.launch {
-                                if (verticalDismissOffset.value > 0f) {
-                                    val newDismiss = (verticalDismissOffset.value + dragAmount).coerceAtLeast(0f)
-                                    verticalDismissOffset.snapTo(newDismiss)
-                                } else if (dragAmount < 0f || lyricsSheetProgress.value > 0f) {
-                                    val deltaFraction = -dragAmount / screenHeightPx
-                                    lyricsSheetProgress.snapTo((lyricsSheetProgress.value + deltaFraction).coerceIn(0f, 1f))
-                                } else if (dragAmount > 0f) {
-                                    verticalDismissOffset.snapTo(verticalDismissOffset.value + dragAmount)
-                                }
-                            }
-                        },
-                        onDragEnd = {
-                            coroutineScope.launch {
-                                if (verticalDismissOffset.value > 0f) {
-                                    val threshold = screenHeightPx * 0.24f
-                                    if (verticalDismissOffset.value > threshold) {
-                                        verticalDismissOffset.animateTo(screenHeightPx, spring(dampingRatio = 0.82f, stiffness = 380f))
-                                        onCollapse()
-                                        delay(50)
-                                        verticalDismissOffset.snapTo(0f)
-                                    } else {
-                                        verticalDismissOffset.animateTo(0f, spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow))
-                                    }
-                                }
-
-                                if (lyricsSheetProgress.value > 0f) {
-                                    if (lyricsSheetProgress.value > 0.18f) {
-                                        lyricsSheetProgress.animateTo(1f, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow))
-                                    } else {
-                                        lyricsSheetProgress.animateTo(0f, spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow))
-                                    }
-                                }
-                            }
-                        },
-                        onDragCancel = {
-                            coroutineScope.launch {
-                                verticalDismissOffset.animateTo(0f, spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow))
-                                if (lyricsSheetProgress.value < 0.5f) {
-                                    lyricsSheetProgress.animateTo(0f, spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow))
-                                } else {
-                                    lyricsSheetProgress.animateTo(1f, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow))
-                                }
-                            }
-                        }
-                    )
-                },
+                .padding(horizontal = 24.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
@@ -423,6 +533,7 @@ fun NowPlayingScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 4.dp, bottom = 4.dp)
+                    .then(mainVerticalDragModifier)
                     .clickable { onCollapse() },
                 contentAlignment = Alignment.Center
             ) {
@@ -442,7 +553,9 @@ fun NowPlayingScreen(
                 artworkScalePercent = artworkScalePercent,
                 artworkCornerRadiusDp = artworkCornerRadiusDp,
                 onOptionsClick = onOptionsClick,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(mainVerticalDragModifier)
             )
 
             // 3. Track Title, Artist, Heart & Options
@@ -489,7 +602,7 @@ fun NowPlayingScreen(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(48.dp)
                             .clip(CircleShape)
                             .background(Color.White.copy(alpha = 0.14f))
                             .clickable { onFavorite(visibleSong) },
@@ -505,7 +618,7 @@ fun NowPlayingScreen(
 
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(48.dp)
                             .clip(CircleShape)
                             .background(Color.White.copy(alpha = 0.14f))
                             .clickable { onOptionsClick(visibleSong) },
@@ -531,21 +644,24 @@ fun NowPlayingScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(18.dp)
+                        .height(24.dp)
                         .onGloballyPositioned { barWidthPx = it.size.width.toFloat() }
                         .pointerInput(activeDuration) {
-                            detectTapGestures { offset ->
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
                                 if (barWidthPx > 0 && activeDuration > 0) {
-                                    val newFraction = (offset.x / barWidthPx).coerceIn(0f, 1f)
+                                    val newFraction = (down.position.x / barWidthPx).coerceIn(0f, 1f)
                                     onSeek((newFraction * activeDuration).toLong())
                                 }
-                            }
-                        }
-                        .pointerInput(activeDuration) {
-                            detectHorizontalDragGestures { change, _ ->
-                                if (barWidthPx > 0 && activeDuration > 0) {
-                                    val newFraction = (change.position.x / barWidthPx).coerceIn(0f, 1f)
-                                    onSeek((newFraction * activeDuration).toLong())
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) break
+                                    change.consume()
+                                    if (barWidthPx > 0 && activeDuration > 0) {
+                                        val newFraction = (change.position.x / barWidthPx).coerceIn(0f, 1f)
+                                        onSeek((newFraction * activeDuration).toLong())
+                                    }
                                 }
                             }
                         },
@@ -582,15 +698,17 @@ fun NowPlayingScreen(
                         modifier = Modifier.align(Alignment.CenterStart)
                     )
 
-                    Text(
-                        text = "Lossless",
-                        fontFamily = Manrope,
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White.copy(alpha = 0.75f),
-                        letterSpacing = 0.2.sp,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+                    if (audioTelemetry.badge.isNotBlank()) {
+                        Text(
+                            text = audioTelemetry.badge,
+                            fontFamily = Manrope,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White.copy(alpha = 0.75f),
+                            letterSpacing = 0.2.sp,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
 
                     val remainingMs = (activeDuration - activePosition).coerceAtLeast(0L)
                     Text(
@@ -706,28 +824,31 @@ fun NowPlayingScreen(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .height(18.dp)
+                        .height(24.dp)
                         .onGloballyPositioned { volBarWidthPx = it.size.width.toFloat() }
                         .pointerInput(Unit) {
-                            detectTapGestures { offset ->
-                                if (volBarWidthPx > 0) {
-                                    val vol = (offset.x / volBarWidthPx).coerceIn(0f, 1f)
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                if (volBarWidthPx > 0f) {
+                                    val vol = (down.position.x / volBarWidthPx).coerceIn(0f, 1f)
                                     currentVolume = vol
                                     audioManager?.let {
                                         val max = it.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                                         it.setStreamVolume(AudioManager.STREAM_MUSIC, (vol * max).toInt(), 0)
                                     }
                                 }
-                            }
-                        }
-                        .pointerInput(Unit) {
-                            detectHorizontalDragGestures { change, _ ->
-                                if (volBarWidthPx > 0) {
-                                    val vol = (change.position.x / volBarWidthPx).coerceIn(0f, 1f)
-                                    currentVolume = vol
-                                    audioManager?.let {
-                                        val max = it.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                                        it.setStreamVolume(AudioManager.STREAM_MUSIC, (vol * max).toInt(), 0)
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) break
+                                    change.consume()
+                                    if (volBarWidthPx > 0f) {
+                                        val vol = (change.position.x / volBarWidthPx).coerceIn(0f, 1f)
+                                        currentVolume = vol
+                                        audioManager?.let {
+                                            val max = it.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                                            it.setStreamVolume(AudioManager.STREAM_MUSIC, (vol * max).toInt(), 0)
+                                        }
                                     }
                                 }
                             }
@@ -782,19 +903,27 @@ fun NowPlayingScreen(
                     )
                 }
 
-                Text(
-                    text = "FLAC • 44.1 kHz • 957 kbps • 34.0 MB",
-                    fontFamily = Manrope,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White.copy(alpha = 0.50f),
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 6.dp)
-                )
+                if (audioTelemetry.specsText.isNotBlank()) {
+                    Text(
+                        text = audioTelemetry.specsText,
+                        fontFamily = Manrope,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White.copy(alpha = 0.50f),
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 6.dp)
+                    )
+                } else {
+                    Spacer(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 6.dp)
+                    )
+                }
 
                 IconButton(
                     onClick = { showQueueSheet = true },
@@ -809,6 +938,7 @@ fun NowPlayingScreen(
                 }
             }
         }
+        }
 
         // -------------------------------------------------------------
         // LAYER 2: Hardware-Accelerated Real-Time Sliding Lyrics Sheet
@@ -816,6 +946,65 @@ fun NowPlayingScreen(
         if (lyricsSheetProgress.value > 0.001f) {
             val lyricsTranslateY = (1f - lyricsSheetProgress.value) * screenHeightPx
             val lyricsScale = (0.92f + (lyricsSheetProgress.value * 0.08f)).coerceIn(0.92f, 1f)
+            val lyricsVerticalDragModifier = Modifier.pointerInput(screenHeightPx) {
+                detectVerticalDragGestures(
+                    onDragStart = {},
+                    onVerticalDrag = { change, dragAmount ->
+                        change.consume()
+                        coroutineScope.launch {
+                            if (verticalDismissOffset.value > 0f) {
+                                verticalDismissOffset.snapTo((verticalDismissOffset.value + dragAmount).coerceAtLeast(0f))
+                            } else if (lyricsSheetProgress.value > 0f) {
+                                val deltaFraction = -dragAmount / screenHeightPx
+                                val nextLyrics = lyricsSheetProgress.value + deltaFraction
+                                if (nextLyrics < 0f) {
+                                    lyricsSheetProgress.snapTo(0f)
+                                    verticalDismissOffset.snapTo(-nextLyrics * screenHeightPx)
+                                } else {
+                                    lyricsSheetProgress.snapTo(nextLyrics.coerceIn(0f, 1f))
+                                }
+                            } else if (dragAmount > 0f) {
+                                verticalDismissOffset.snapTo(verticalDismissOffset.value + dragAmount)
+                            }
+                        }
+                    },
+                    onDragEnd = {
+                        coroutineScope.launch {
+                            when (
+                                resolveVerticalGestureOutcome(
+                                    dismissOffsetPx = verticalDismissOffset.value,
+                                    screenHeightPx = screenHeightPx,
+                                    lyricsProgress = lyricsSheetProgress.value,
+                                    startedInLyrics = true
+                                )
+                            ) {
+                                VerticalGestureOutcome.COLLAPSE_NOW_PLAYING -> {
+                                    verticalDismissOffset.animateTo(screenHeightPx, spring(dampingRatio = 0.82f, stiffness = 380f))
+                                    onCollapse()
+                                    delay(50)
+                                    verticalDismissOffset.snapTo(0f)
+                                    lyricsSheetProgress.snapTo(0f)
+                                }
+                                VerticalGestureOutcome.CLOSE_LYRICS,
+                                VerticalGestureOutcome.SETTLE_MAIN -> {
+                                    verticalDismissOffset.animateTo(0f, spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow))
+                                    lyricsSheetProgress.animateTo(0f, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow))
+                                }
+                                VerticalGestureOutcome.OPEN_LYRICS -> {
+                                    verticalDismissOffset.animateTo(0f, spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow))
+                                    lyricsSheetProgress.animateTo(1f, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow))
+                                }
+                            }
+                        }
+                    },
+                    onDragCancel = {
+                        coroutineScope.launch {
+                            verticalDismissOffset.animateTo(0f, spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow))
+                            lyricsSheetProgress.animateTo(1f, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow))
+                        }
+                    }
+                )
+            }
 
             Column(
                 modifier = Modifier
@@ -825,14 +1014,21 @@ fun NowPlayingScreen(
                         scaleX = lyricsScale
                         scaleY = lyricsScale
                     }
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                Color.Black.copy(alpha = 0.15f),
-                                Color.Black.copy(alpha = 0.40f),
-                                Color.Black.copy(alpha = 0.60f)
+                    .then(
+                        if (glassEnabled) {
+                            Modifier.drawBackdrop(
+                                backdrop = nowPlayingBackdrop,
+                                shape = { RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp) },
+                                effects = { liquidGlassEffects() },
+                                onDrawSurface = {
+                                    drawRect(Color(0xFF121420).copy(alpha = 0.52f))
+                                }
                             )
-                        )
+                        } else {
+                            Modifier
+                                .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                                .background(Color(0xFF121420).copy(alpha = 0.90f))
+                        }
                     )
                     .blur(screenBackdropBlur)
                     .statusBarsPadding()
@@ -844,32 +1040,7 @@ fun NowPlayingScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 4.dp)
-                        .pointerInput(Unit) {
-                            detectVerticalDragGestures(
-                                onDragStart = {},
-                                onVerticalDrag = { change, dragAmount ->
-                                    change.consume()
-                                    coroutineScope.launch {
-                                        val deltaFraction = -dragAmount / screenHeightPx
-                                        lyricsSheetProgress.snapTo((lyricsSheetProgress.value + deltaFraction).coerceIn(0f, 1f))
-                                    }
-                                },
-                                onDragEnd = {
-                                    coroutineScope.launch {
-                                        if (lyricsSheetProgress.value < 0.82f) {
-                                            lyricsSheetProgress.animateTo(0f, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow))
-                                        } else {
-                                            lyricsSheetProgress.animateTo(1f, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow))
-                                        }
-                                    }
-                                },
-                                onDragCancel = {
-                                    coroutineScope.launch {
-                                        lyricsSheetProgress.animateTo(1f, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow))
-                                    }
-                                }
-                            )
-                        },
+                        .then(lyricsVerticalDragModifier),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -977,7 +1148,8 @@ fun NowPlayingScreen(
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .fillMaxWidth(),
+                            .fillMaxWidth()
+                            .then(lyricsVerticalDragModifier),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -1003,23 +1175,26 @@ fun NowPlayingScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(16.dp)
+                            .height(20.dp)
                             .onGloballyPositioned { barWidthPx = it.size.width.toFloat() }
                             .pointerInput(activeDuration) {
-                                detectTapGestures { offset ->
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false)
                                     triggerUserWakeUp()
                                     if (barWidthPx > 0 && activeDuration > 0) {
-                                        val newFraction = (offset.x / barWidthPx).coerceIn(0f, 1f)
+                                        val newFraction = (down.position.x / barWidthPx).coerceIn(0f, 1f)
                                         onSeek((newFraction * activeDuration).toLong())
                                     }
-                                }
-                            }
-                            .pointerInput(activeDuration) {
-                                detectHorizontalDragGestures { change, _ ->
-                                    triggerUserWakeUp()
-                                    if (barWidthPx > 0 && activeDuration > 0) {
-                                        val newFraction = (change.position.x / barWidthPx).coerceIn(0f, 1f)
-                                        onSeek((newFraction * activeDuration).toLong())
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                        if (!change.pressed) break
+                                        change.consume()
+                                        triggerUserWakeUp()
+                                        if (barWidthPx > 0 && activeDuration > 0) {
+                                            val newFraction = (change.position.x / barWidthPx).coerceIn(0f, 1f)
+                                            onSeek((newFraction * activeDuration).toLong())
+                                        }
                                     }
                                 }
                             },
@@ -1313,7 +1488,7 @@ fun NowPlayingScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.QueueMusic,
+                                    imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
                                     contentDescription = null,
                                     tint = Color.White.copy(alpha = 0.22f),
                                     modifier = Modifier.size(42.dp)

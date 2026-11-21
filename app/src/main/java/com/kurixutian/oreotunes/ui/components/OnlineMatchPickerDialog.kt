@@ -48,32 +48,14 @@ fun OnlineMatchPickerDialog(
     val contentTextColor = if (isLight) Color(0xFF121520) else Color.White
     val subtleTextColor = contentTextColor.copy(alpha = 0.65f)
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+    LiquidGlassModal(
+        onDismissRequest = onDismiss
     ) {
-        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
-        SideEffect {
-            dialogWindow?.let { window ->
-                window.setDimAmount(0.55f)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                    window.attributes.blurBehindRadius = 48
-                }
-            }
-        }
-
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
                 .fillMaxHeight(0.82f)
-                .clip(RoundedCornerShape(24.dp))
-                .background(dialogBg)
-                .border(
-                    width = if (isLight) 1.dp else 0.dp,
-                    color = Color.Black.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(24.dp)
-                )
+                .liquidGlassSurface(isLight = isLight, shape = RoundedCornerShape(24.dp))
                 .padding(22.dp)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {

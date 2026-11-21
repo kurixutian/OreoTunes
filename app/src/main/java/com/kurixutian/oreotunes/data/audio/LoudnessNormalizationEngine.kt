@@ -42,17 +42,41 @@ class LoudnessNormalizationEngine(private val context: Context) {
                 if (mime.startsWith("audio/")) {
                     // Check if file metadata stores ReplayGain or Loudness tags
                     if (format.containsKey("replaygain_track_gain")) {
-                        val gain = format.getFloat("replaygain_track_gain")
-                        measuredLufs = TARGET_LOUDNESS_LUFS - gain
+                        val gain = try {
+                            format.getFloat("replaygain_track_gain")
+                        } catch (_: Exception) {
+                            try {
+                                format.getString("replaygain_track_gain")?.replace("dB", "")?.trim()?.toFloatOrNull() ?: 0f
+                            } catch (_: Exception) { 0f }
+                        }
+                        if (!gain.isNaN() && !gain.isInfinite()) {
+                            measuredLufs = TARGET_LOUDNESS_LUFS - gain
+                        }
                     }
                     if (format.containsKey("replaygain_track_peak")) {
-                        measuredPeak = format.getFloat("replaygain_track_peak")
+                        val peak = try {
+                            format.getFloat("replaygain_track_peak")
+                        } catch (_: Exception) {
+                            try {
+                                format.getString("replaygain_track_peak")?.toFloatOrNull() ?: DEFAULT_ASSUMED_PEAK_DBTP
+                            } catch (_: Exception) { DEFAULT_ASSUMED_PEAK_DBTP }
+                        }
+                        if (!peak.isNaN() && !peak.isInfinite()) {
+                            measuredPeak = peak
+                        }
                     }
                     break
                 }
             }
             extractor.release()
         } catch (_: Exception) {}
+
+        if (measuredLufs.isNaN() || measuredLufs.isInfinite()) {
+            measuredLufs = DEFAULT_ASSUMED_LUFS
+        }
+        if (measuredPeak.isNaN() || measuredPeak.isInfinite()) {
+            measuredPeak = DEFAULT_ASSUMED_PEAK_DBTP
+        }
 
         // Phase 2: Gain Calculation with True Peak Safety Guardrail
         val rawTargetGainDb = TARGET_LOUDNESS_LUFS - measuredLufs
@@ -65,7 +89,8 @@ class LoudnessNormalizationEngine(private val context: Context) {
         }
 
         // Phase 3: Linear Multiplier (Linear_Gain = 10 ^ (Target_Gain_dB / 20))
-        val linearGain = 10.0f.pow(safeTargetGainDb / 20.0f).coerceIn(0.15f, 1.85f)
+        val rawLinearGain = 10.0f.pow(safeTargetGainDb / 20.0f)
+        val linearGain = if (rawLinearGain.isNaN() || rawLinearGain.isInfinite()) 1.0f else rawLinearGain.coerceIn(0.15f, 1.85f)
 
         val profile = LoudnessProfile(
             integratedLoudnessLufs = measuredLufs,
@@ -81,6 +106,9 @@ class LoudnessNormalizationEngine(private val context: Context) {
     fun calculateSafeMultiplier(rawVolumeFactor: Float, isNormalizationEnabled: Boolean, song: Song?): Float {
         if (!isNormalizationEnabled || song == null) return rawVolumeFactor
         val cachedProfile = profileCache[song.id] ?: return rawVolumeFactor
-        return (rawVolumeFactor * cachedProfile.linearGainMultiplier).coerceIn(0f, 1.85f)
+        val mult = cachedProfile.linearGainMultiplier
+        val safeMult = if (mult.isNaN() || mult.isInfinite()) 1.0f else mult
+        val res = rawVolumeFactor * safeMult
+        return if (res.isNaN() || res.isInfinite()) rawVolumeFactor else res.coerceIn(0f, 1.85f)
     }
 }

@@ -28,6 +28,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -47,6 +48,8 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.navigation.NavType
@@ -480,7 +483,6 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val uiState by viewModel.uiState.collectAsState()
-            val playbackProgress by viewModel.playbackProgress.collectAsState()
             val navController = rememberNavController()
             val navBackStackEntry by navController.currentBackStackEntryAsState()
             val currentRoute = navBackStackEntry?.destination?.route ?: "home"
@@ -507,9 +509,10 @@ class MainActivity : ComponentActivity() {
             val nestedScrollConnection = remember {
                 object : NestedScrollConnection {
                     override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                        if (available.y < -14f && isNavBarVisible) {
+                        // High threshold (80f) prevents hair-trigger toggling on minor scroll micro-movements
+                        if (available.y < -80f && isNavBarVisible) {
                             isNavBarVisible = false
-                        } else if (available.y > 14f && !isNavBarVisible) {
+                        } else if (available.y > 80f && !isNavBarVisible) {
                             isNavBarVisible = true
                         }
                         return Offset.Zero
@@ -523,6 +526,7 @@ class MainActivity : ComponentActivity() {
             var playlistToAddSongsTo by remember { mutableStateOf<Playlist?>(null) }
             var songToEditMetadata by remember { mutableStateOf<Song?>(null) }
             var songForCandidatePicker by remember { mutableStateOf<Pair<Song, List<OnlineMetadataResult>>?>(null) }
+            var songForDetails by remember { mutableStateOf<Song?>(null) }
             var showStatsDialog by remember { mutableStateOf(false) }
             var showSettingsDialog by remember { mutableStateOf(false) }
             var selectedFolderSongsView by remember { mutableStateOf<Pair<String, List<Song>>?>(null) }
@@ -545,10 +549,11 @@ class MainActivity : ComponentActivity() {
                     songToAddToPlaylist != null ||
                     playlistToAddSongsTo != null ||
                     songToEditMetadata != null ||
-                    songForCandidatePicker != null
+                    songForCandidatePicker != null ||
+                    songForDetails != null
 
             val backgroundBlurRadius by animateDpAsState(
-                targetValue = if (isAnyDialogOrActionActive) 28.dp else 0.dp,
+                targetValue = if (isAnyDialogOrActionActive) 10.dp else 0.dp,
                 animationSpec = tween(durationMillis = 200, easing = SmoothEasing),
                 label = "backgroundBlurRadius"
             )
@@ -574,8 +579,6 @@ class MainActivity : ComponentActivity() {
                     navController.navigate("artist/${Uri.encode(artistName.trim())}")
                 }
             }
-
-            val navBarInsetBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
             val isCustomDark = uiState.appThemeMode == AppThemeMode.DARK && uiState.darkThemeStyle == DarkThemeStyle.AMOLED_CUSTOM_ACCENT
             val isCustomLight = uiState.appThemeMode == AppThemeMode.LIGHT && uiState.lightThemeStyle == LightThemeStyle.PURE_WHITE_CUSTOM_ACCENT
@@ -608,35 +611,46 @@ class MainActivity : ComponentActivity() {
                     else -> effectivePalette.darkBackground
                 }
 
+                val reducedMotion = com.kurixutian.oreotunes.ui.utils.rememberReducedMotion()
+                CompositionLocalProvider(
+                    LocalLiquidGlassEnabled provides uiState.liquidGlassEnabled,
+                    com.kurixutian.oreotunes.ui.utils.LocalReducedMotion provides reducedMotion
+                ) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(rootBgColor)
                 ) {
+                    val backdropBaseColor = if (!isPureAmoled && !isLightMode) effectivePalette.surfaceColor else rootBgColor
+                    val navigationBackdrop = rememberLayerBackdrop {
+                        drawRect(backdropBaseColor)
+                        drawContent()
+                    }
+
                     if (!isPureAmoled && !isLightMode) {
                         DynamicAtmosphereBackground(
                             albumArtUri = uiState.currentSong?.albumArtUri,
                             palette = effectivePalette,
-                            isPlaying = uiState.isPlaying
+                            isPlaying = uiState.isPlaying,
+                            modifier = if (backgroundBlurRadius > 0.dp) Modifier.blur(backgroundBlurRadius) else Modifier
                         )
                     }
-
-                    val miniPlayerBottomPadding by animateDpAsState(
-                        targetValue = if (isNavBarVisible) 64.dp + navBarInsetBottom + 8.dp else navBarInsetBottom + 12.dp,
-                        animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow),
-                        label = "miniPlayerBottomPadding"
-                    )
 
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .blur(backgroundBlurRadius)
                             .nestedScroll(nestedScrollConnection)
                     ) {
-                        NavHost(
-                            navController = navController,
-                            startDestination = "home",
-                            modifier = Modifier.fillMaxSize(),
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(if (backgroundBlurRadius > 0.dp) Modifier.blur(backgroundBlurRadius) else Modifier)
+                                .then(if (uiState.liquidGlassEnabled) Modifier.layerBackdrop(navigationBackdrop) else Modifier)
+                        ) {
+                            NavHost(
+                                navController = navController,
+                                startDestination = "home",
+                                modifier = Modifier.fillMaxSize(),
                             enterTransition = {
                                 fadeIn(animationSpec = tween(280, easing = SmoothEasing)) +
                                         slideIntoContainer(
@@ -683,6 +697,7 @@ class MainActivity : ComponentActivity() {
                                     quickPickMode = uiState.quickPickMode,
                                     heroRefreshHours = uiState.heroRefreshHours,
                                     palette = effectivePalette,
+                                    backdrop = navigationBackdrop,
                                     onQuickPickModeSelected = { mode -> viewModel.setQuickPickMode(mode) },
                                     onSongClick = { song, queue -> viewModel.playSong(song, queue = queue, autoExpand = false) },
                                     onSongLongClick = { song -> viewModel.setSongAction(song) },
@@ -713,8 +728,12 @@ class MainActivity : ComponentActivity() {
                                     artists = uiState.allArtists.ifEmpty { uiState.suggestedArtists },
                                     detectedFolders = uiState.detectedFolders,
                                     selectedFolders = uiState.selectedFolders,
-                                    onSongClick = { song -> viewModel.playSong(song, queue = uiState.songs, autoExpand = false) },
-                                    onSongLongClick = { song -> viewModel.setSongAction(song) },
+                                    onSongClick = remember(viewModel, uiState.songs) {
+                                        { song -> viewModel.playSong(song, queue = uiState.songs, autoExpand = false) }
+                                    },
+                                    onSongLongClick = remember(viewModel) {
+                                        { song -> viewModel.setSongAction(song) }
+                                    },
                                     onPlaylistClick = { playlist -> navController.navigate("playlist/${playlist.id}") },
                                     onCreatePlaylist = { showCreatePlaylistDialog = true },
                                     onAlbumClick = { album -> navigateToAlbum(album) },
@@ -860,12 +879,17 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
+                        }
 
-                        // Floating Bottom Dock (MiniPlayer + Frosted Glass Navbar)
+                        // Floating Bottom Dock (MiniPlayer + Liquid Glass Navbar, merges on downward scroll)
+                        val navBarInsetBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                        val isLightMode = uiState.appThemeMode == AppThemeMode.LIGHT
                         Box(
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
                                 .fillMaxWidth()
+                                .then(if (backgroundBlurRadius > 0.dp) Modifier.blur(backgroundBlurRadius) else Modifier)
+                                .padding(bottom = navBarInsetBottom)
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null
@@ -873,46 +897,118 @@ class MainActivity : ComponentActivity() {
                             contentAlignment = Alignment.BottomCenter
                         ) {
                             val currentPlayingSong = uiState.currentSong
-                            if (currentPlayingSong != null) {
-                                MiniPlayer(
-                                    song = currentPlayingSong,
-                                    isPlaying = uiState.isPlaying,
-                                    progressProvider = { playbackProgress },
-                                    primaryColor = Color.White,
-                                    onPlayPause = { viewModel.togglePlayPause() },
-                                    onFavorite = { viewModel.toggleFavorite(currentPlayingSong) },
-                                    onClick = { viewModel.setNowPlayingExpanded(true) },
+                            AnimatedContent(
+                                targetState = isNavBarVisible,
+                                transitionSpec = {
+                                    (fadeIn(tween(220, easing = SmoothEasing)) +
+                                        slideInVertically(
+                                            animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow),
+                                            initialOffsetY = { it / 3 }
+                                        )) togetherWith
+                                    (fadeOut(tween(180, easing = SmoothEasing)) +
+                                        slideOutVertically(
+                                            animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow),
+                                            targetOffsetY = { it / 3 }
+                                        ))
+                                },
+                                label = "bottomDockTransition"
+                            ) { navVisible ->
+                                if (!navVisible) {
+                                // Merged compact dock when scrolled down
+                                Row(
                                     modifier = Modifier
-                                        .padding(horizontal = 14.dp)
-                                        .padding(bottom = miniPlayerBottomPadding)
-                                )
-                            }
-
-                            AnimatedVisibility(
-                                visible = isNavBarVisible,
-                                enter = slideInVertically(
-                                    animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow),
-                                    initialOffsetY = { it }
-                                ) + fadeIn(animationSpec = tween(180, easing = SmoothEasing)),
-                                exit = slideOutVertically(
-                                    animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow),
-                                    targetOffsetY = { it }
-                                ) + fadeOut(animationSpec = tween(150, easing = SmoothEasing))
-                            ) {
-                                UniversalBottomNavigation(
-                                    currentRoute = currentRoute,
-                                    palette = effectivePalette,
-                                    isLightMode = uiState.appThemeMode == AppThemeMode.LIGHT,
-                                    onNavigate = { route: String ->
-                                        if (currentRoute != route) {
-                                            navController.navigate(route) {
-                                                popUpTo("home") { saveState = true }
-                                                launchSingleTop = true
-                                                restoreState = true
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 18.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    val activeIcon = when (currentRoute) {
+                                        "library" -> Icons.Rounded.LibraryMusic
+                                        "search" -> Icons.Rounded.Search
+                                        else -> Icons.Rounded.Home
+                                    }
+                                    val activeColor = if (isLightMode) {
+                                        effectivePalette.lightAccent
+                                    } else {
+                                        effectivePalette.accent
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(64.dp)
+                                            .liquidGlassChrome(
+                                                backdrop = navigationBackdrop,
+                                                isLight = isLightMode,
+                                                glassEnabled = uiState.liquidGlassEnabled
+                                            )
+                                            .clickable { isNavBarVisible = true },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = activeIcon,
+                                            contentDescription = "Show navigation",
+                                            tint = activeColor,
+                                            modifier = Modifier.size(26.dp)
+                                        )
+                                    }
+                                    if (currentPlayingSong != null) {
+                                        val miniProgress by viewModel.playbackProgress.collectAsState()
+                                        MiniPlayer(
+                                            song = currentPlayingSong,
+                                            isPlaying = uiState.isPlaying,
+                                            progressProvider = { miniProgress },
+                                            backdrop = navigationBackdrop,
+                                            isLightMode = isLightMode,
+                                            primaryColor = Color.White,
+                                            onPlayPause = { viewModel.togglePlayPause() },
+                                            onFavorite = { viewModel.toggleFavorite(currentPlayingSong) },
+                                            onSkipNext = { viewModel.skipNext() },
+                                            onSkipPrev = { viewModel.skipPrevious() },
+                                            onClick = { viewModel.setNowPlayingExpanded(true) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                }
+                            } else {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    if (currentPlayingSong != null) {
+                                        val miniProgress by viewModel.playbackProgress.collectAsState()
+                                        MiniPlayer(
+                                            song = currentPlayingSong,
+                                            isPlaying = uiState.isPlaying,
+                                            progressProvider = { miniProgress },
+                                            backdrop = navigationBackdrop,
+                                            isLightMode = isLightMode,
+                                            primaryColor = Color.White,
+                                            onPlayPause = { viewModel.togglePlayPause() },
+                                            onFavorite = { viewModel.toggleFavorite(currentPlayingSong) },
+                                            onSkipNext = { viewModel.skipNext() },
+                                            onSkipPrev = { viewModel.skipPrevious() },
+                                            onClick = { viewModel.setNowPlayingExpanded(true) },
+                                            modifier = Modifier.padding(horizontal = 18.dp)
+                                        )
+                                    }
+                                    UniversalBottomNavigation(
+                                        currentRoute = currentRoute,
+                                        palette = effectivePalette,
+                                        isLightMode = isLightMode,
+                                        backdrop = navigationBackdrop,
+                                        onNavigate = { route: String ->
+                                            if (currentRoute != route) {
+                                                navController.navigate(route) {
+                                                    popUpTo("home") { saveState = true }
+                                                    launchSingleTop = true
+                                                    restoreState = true
+                                                }
                                             }
                                         }
-                                    }
-                                )
+                                    )
+                                }
+                            }
                             }
                         }
                     }
@@ -926,11 +1022,12 @@ class MainActivity : ComponentActivity() {
                         ) + fadeIn(animationSpec = tween(220, easing = SmoothEasing)),
                         exit = fadeOut(animationSpec = tween(60, easing = SmoothEasing))
                     ) {
+                        val currentPositionMs by viewModel.currentPositionMs.collectAsState()
                         NowPlayingScreen(
                             song = uiState.currentSong,
                             songsQueue = if (uiState.currentQueue.isNotEmpty()) uiState.currentQueue else uiState.songs,
                             isPlaying = uiState.isPlaying,
-                            currentPosition = uiState.currentPosition,
+                            currentPosition = currentPositionMs,
                             duration = uiState.duration,
                             isShuffle = uiState.isShuffleOn,
                             repeatMode = uiState.repeatMode,
@@ -955,6 +1052,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                    CompositionLocalProvider(LocalLiquidGlassBackdrop provides navigationBackdrop) {
                     // Universal Context Sheet
                     SongActionSheet(
                         song = uiState.activeSongAction,
@@ -974,8 +1072,16 @@ class MainActivity : ComponentActivity() {
                         onEditMetadata = { song -> songToEditMetadata = song },
                         onViewAlbum = { album -> navigateToAlbum(album) },
                         onViewArtist = { artist -> navigateToArtist(artist) },
-                        onShowDetails = {}
+                        onShowDetails = { song -> songForDetails = song }
                     )
+
+                    songForDetails?.let { song ->
+                        SongDetailsDialog(
+                            song = song,
+                            onDismiss = { songForDetails = null },
+                            palette = effectivePalette
+                        )
+                    }
 
                     // Candidate Picker Modal (Album vs Single vs Deluxe)
                     songForCandidatePicker?.let { pair ->
@@ -1115,6 +1221,7 @@ class MainActivity : ComponentActivity() {
                             customAccentColor = uiState.customAccentColor,
                             artworkScalePercent = uiState.artworkScalePercent,
                             artworkCornerRadiusDp = uiState.artworkCornerRadiusDp,
+                            liquidGlassEnabled = uiState.liquidGlassEnabled,
                             currentVersion = packageManager.getPackageInfo(packageName, 0).versionName ?: "Unknown",
                             updateInfo = updateInfo,
                             isCheckingForUpdate = isCheckingForUpdate,
@@ -1150,6 +1257,7 @@ class MainActivity : ComponentActivity() {
                                   }
                               },
                             onToggleCrossfade = { enabled -> viewModel.toggleCrossfade(enabled) },
+                            onToggleLiquidGlass = { enabled -> viewModel.toggleLiquidGlass(enabled) },
                             onCrossfadeDurationChange = { dur -> viewModel.setCrossfadeDuration(dur) },
                             onHeroRefreshHoursChange = { hours -> viewModel.setHeroRefreshHours(hours) },
                             onToggleVolumeNormalization = { enabled -> viewModel.toggleVolumeNormalization(enabled) },
@@ -1166,6 +1274,8 @@ class MainActivity : ComponentActivity() {
                             onDismiss = { showSettingsDialog = false }
                         )
                     }
+                    }
+                }
                 }
             }
         }
@@ -1196,45 +1306,25 @@ fun UniversalBottomNavigation(
     currentRoute: String,
     palette: ArtworkPalette? = null,
     isLightMode: Boolean = false,
+    backdrop: com.kyant.backdrop.Backdrop,
     onNavigate: (String) -> Unit
 ) {
-    val navBarInsetBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val activeColor: Color = if (isLightMode) (palette?.lightAccent ?: Color(0xFF181A24)) else (palette?.accent ?: Color(0xFF64D2FF))
-
-    val navBgBrush = if (isLightMode) {
-        Brush.verticalGradient(
-            listOf(
-                activeColor.copy(alpha = 0.10f),
-                activeColor.copy(alpha = 0.18f),
-                activeColor.copy(alpha = 0.24f)
-            )
-        )
-    } else {
-        Brush.verticalGradient(
-            listOf(
-                activeColor.copy(alpha = 0.12f),
-                activeColor.copy(alpha = 0.21f),
-                activeColor.copy(alpha = 0.30f)
-            )
-        )
-    }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            .background(navBgBrush)
-            .border(
-                width = 0.8.dp,
-                color = if (isLightMode) Color.Black.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.09f),
-                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+            .padding(horizontal = 18.dp)
+            .liquidGlassChrome(
+                backdrop = backdrop,
+                isLight = isLightMode,
+                fallbackShape = RoundedCornerShape(32.dp)
             )
-            .padding(bottom = navBarInsetBottom)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(60.dp)
+                .height(64.dp)
                 .padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically

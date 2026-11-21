@@ -4,7 +4,8 @@ import android.net.Uri
 import android.os.Build
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.*
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,17 +14,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.size.Precision
 import com.kurixutian.oreotunes.data.repository.ArtworkPalette
+import com.kurixutian.oreotunes.ui.utils.LocalReducedMotion
 
 private val SmoothEasing = CubicBezierEasing(0.20f, 0.0f, 0.0f, 1.0f)
 
@@ -34,129 +40,140 @@ fun DynamicAtmosphereBackground(
     isPlaying: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val animDurationMs = if (LocalReducedMotion.current) 0 else 400
+
     val animatedBg by animateColorAsState(
         targetValue = palette.darkBackground,
-        animationSpec = tween(durationMillis = 500, easing = SmoothEasing),
+        animationSpec = tween(durationMillis = animDurationMs, easing = SmoothEasing),
         label = "atmosphereBgAnim"
     )
 
     val animatedDominant by animateColorAsState(
-        targetValue = if (palette.isMostlyNeutral) Color(0xFF22222A).copy(alpha = 0.25f) else palette.dominant.copy(alpha = 0.45f),
-        animationSpec = tween(durationMillis = 500, easing = SmoothEasing),
+        targetValue = if (palette.isMostlyNeutral) Color(0xFF2E3244).copy(alpha = 0.50f) else palette.dominant.copy(alpha = 0.65f),
+        animationSpec = tween(durationMillis = animDurationMs, easing = SmoothEasing),
         label = "atmosphereDominantAnim"
     )
 
     val animatedSecondary by animateColorAsState(
-        targetValue = if (palette.isMostlyNeutral) Color(0xFF14141A).copy(alpha = 0.20f) else palette.secondary.copy(alpha = 0.35f),
-        animationSpec = tween(durationMillis = 500, easing = SmoothEasing),
+        targetValue = if (palette.isMostlyNeutral) Color(0xFF1E2232).copy(alpha = 0.40f) else palette.secondary.copy(alpha = 0.55f),
+        animationSpec = tween(durationMillis = animDurationMs, easing = SmoothEasing),
         label = "atmosphereSecondaryAnim"
     )
 
-    val infiniteTransition = rememberInfiniteTransition(label = "breathingAtmosphere")
-    
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1.0f,
-        targetValue = if (isPlaying) 1.22f else 1.04f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(4200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulseScale"
+    val animatedAccent by animateColorAsState(
+        targetValue = if (palette.isMostlyNeutral) Color(0xFF404860).copy(alpha = 0.35f) else palette.accent.copy(alpha = 0.45f),
+        animationSpec = tween(durationMillis = animDurationMs, easing = SmoothEasing),
+        label = "atmosphereAccentAnim"
     )
 
-    val driftOffsetX by infiniteTransition.animateFloat(
-        initialValue = -20f,
-        targetValue = 20f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(6500, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "driftOffsetX"
-    )
-
-    val driftOffsetY by infiniteTransition.animateFloat(
-        initialValue = -30f,
-        targetValue = 30f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(5200, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "driftOffsetY"
-    )
+    val imageRequest = remember(albumArtUri) {
+        if (albumArtUri != null) {
+            ImageRequest.Builder(context)
+                .data(albumArtUri)
+                .size(180) // Downscaled for ultra-fast decode & low GPU memory
+                .precision(Precision.INEXACT)
+                .crossfade(true)
+                .build()
+        } else {
+            null
+        }
+    }
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(animatedBg)
     ) {
-        // 1. Glowing Radial Atmosphere Orbs
+        // 1. Vibrant Top-Center Ambient Glow Orb (radial gradient already soft; no extra GPU blur pass)
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .offset(x = driftOffsetX.dp, y = (-40 + driftOffsetY).dp)
-                .size(340.dp)
-                .scale(pulseScale)
+                .offset(y = (-60).dp)
+                .size(380.dp)
                 .clip(CircleShape)
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            animatedDominant,
-                            animatedDominant.copy(alpha = 0.15f),
+                            animatedDominant.copy(alpha = animatedDominant.alpha * 0.72f),
+                            animatedDominant.copy(alpha = 0.22f),
                             Color.Transparent
                         )
                     )
                 )
-                .blur(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 64.dp else 36.dp)
         )
 
+        // 2. Secondary Floating Atmosphere Orb (Center-Right)
         Box(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .offset(x = (-driftOffsetX).dp, y = (60 - driftOffsetY).dp)
-                .size(280.dp)
-                .scale(pulseScale * 0.95f)
+                .offset(x = 60.dp, y = 80.dp)
+                .size(340.dp)
                 .clip(CircleShape)
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            animatedSecondary,
-                            animatedSecondary.copy(alpha = 0.10f),
+                            animatedSecondary.copy(alpha = animatedSecondary.alpha * 0.72f),
+                            animatedAccent.copy(alpha = 0.18f),
                             Color.Transparent
                         )
                     )
                 )
-                .blur(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 72.dp else 40.dp)
         )
 
-        // 2. High-Fidelity Blurred Artwork Layer with Smooth Crossfade
+        // 3. Lower Accent Glow Orb (Bottom-Left)
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .offset(x = (-40).dp, y = 40.dp)
+                .size(280.dp)
+                .clip(CircleShape)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            animatedAccent.copy(alpha = animatedAccent.alpha * 0.72f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+
+        // 4. High-Fidelity Blurred Artwork Layer with Smooth Crossfade
         Crossfade(
-            targetState = albumArtUri,
-            animationSpec = tween(durationMillis = 400, easing = SmoothEasing),
+            targetState = imageRequest,
+            animationSpec = tween(durationMillis = if (animDurationMs == 0) 0 else 350, easing = SmoothEasing),
             label = "artworkBackgroundCrossfade"
-        ) { targetUri ->
-            if (targetUri != null) {
+        ) { req ->
+            if (req != null) {
                 AsyncImage(
-                    model = targetUri,
+                    model = req,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .fillMaxSize()
-                        .scale(pulseScale * 1.08f)
-                        .blur(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 80.dp else 44.dp)
+                        .graphicsLayer {
+                            scaleX = 1.20f
+                            scaleY = 1.20f
+                            alpha = 0.82f
+                        }
+                        .blur(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 28.dp else 18.dp)
                 )
             }
         }
 
-        // 3. Smooth Darkening Atmospheric Veil
+        // 5. Refined Frosted Glass Vignette & Atmospheric Veil
+        // Provides deep contrast for controls & text while letting vivid artwork colors shine through
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            animatedDominant.copy(alpha = 0.20f),
-                            animatedBg.copy(alpha = 0.55f),
-                            animatedBg.copy(alpha = 0.88f),
+                            Color.Black.copy(alpha = 0.25f),
+                            Color.Black.copy(alpha = 0.10f),
+                            Color.Black.copy(alpha = 0.30f),
+                            animatedBg.copy(alpha = 0.65f),
+                            animatedBg.copy(alpha = 0.85f),
                             animatedBg
                         )
                     )

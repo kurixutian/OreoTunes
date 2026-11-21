@@ -1,5 +1,6 @@
 package com.kurixutian.oreotunes.ui.components
 
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -18,10 +19,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import coil.size.Precision
 
 @Composable
 fun ArtworkThumbnail(
@@ -33,10 +36,16 @@ fun ArtworkThumbnail(
     contentScale: ContentScale = ContentScale.Crop
 ) {
     val context = LocalContext.current
-    val imageRequest = remember(model) {
+    val density = LocalDensity.current
+    val targetPx = remember(targetSizeDp, density) {
+        with(density) { targetSizeDp.roundToPx() }
+    }
+    val imageRequest = remember(model, targetPx) {
         ImageRequest.Builder(context)
             .data(model)
-            .crossfade(true)
+            .size(targetPx)
+            .precision(Precision.INEXACT)
+            .bitmapConfig(Bitmap.Config.RGB_565)
             .build()
     }
 

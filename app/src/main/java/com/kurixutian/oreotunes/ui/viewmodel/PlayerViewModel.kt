@@ -77,6 +77,7 @@ data class PlayerUiState(
     val leastPlayedStats: List<SongPlayStat> = emptyList(),
     val topArtistStats: List<ArtistPlayStat> = emptyList(),
     val crossfadeEnabled: Boolean = true,
+    val liquidGlassEnabled: Boolean = true,
     val crossfadeDurationSec: Int = 8,
     val volumeNormalizationEnabled: Boolean = true,
     val hiFiBypassEnabled: Boolean = false,
@@ -192,6 +193,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _uiState = MutableStateFlow(
         PlayerUiState(
             crossfadeEnabled = playlistPrefs.isCrossfadeEnabled(),
+            liquidGlassEnabled = playlistPrefs.isLiquidGlassEnabled(),
             crossfadeDurationSec = playlistPrefs.getCrossfadeDurationSec(),
             heroRefreshHours = playlistPrefs.getHeroRefreshHours(),
             volumeNormalizationEnabled = playlistPrefs.isVolumeNormalizationEnabled(),
@@ -210,6 +212,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _playbackProgress = MutableStateFlow(0f)
     val playbackProgress: StateFlow<Float> = _playbackProgress.asStateFlow()
+
+    private val _currentPositionMs = MutableStateFlow(0L)
+    val currentPositionMs: StateFlow<Long> = _currentPositionMs.asStateFlow()
 
     private val deviceEventReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -467,14 +472,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 }
 
                 if (profile != null) {
-                    activeP.volume =
-                        if (!isBypassActive() &&
-                            _uiState.value.volumeNormalizationEnabled
-                        ) {
-                            profile.linearGainMultiplier
-                        } else {
-                            1.0f
-                        }
+                    val targetVol = if (!isBypassActive() && _uiState.value.volumeNormalizationEnabled) {
+                        val m = profile.linearGainMultiplier
+                        if (m.isNaN() || m.isInfinite()) 1.0f else m.coerceIn(0.15f, 1.85f)
+                    } else {
+                        1.0f
+                    }
+                    activeP.volume = targetVol
                 }
 
                 if (palette != null) {
@@ -666,13 +670,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
                         val progress = if (dur > 0) pos.toFloat() / dur.toFloat() else 0f
                         _playbackProgress.value = progress
+                        _currentPositionMs.value = pos
 
-                        _uiState.update {
-                            it.copy(
-                                currentPosition = pos,
-                                duration = if (dur > 0) dur else it.duration,
-                                isPlaying = p.isPlaying
-                            )
+                        val cur = _uiState.value
+                        val nextDuration = if (dur > 0) dur else cur.duration
+                        if (nextDuration != cur.duration || p.isPlaying != cur.isPlaying) {
+                            _uiState.update {
+                                it.copy(
+                                    duration = if (dur > 0) dur else it.duration,
+                                    isPlaying = p.isPlaying
+                                )
+                            }
                         }
 
                         val crossfadeDurationMs = _uiState.value.crossfadeDurationSec * 1000L
@@ -821,8 +829,26 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         snapTransition: Boolean = false
     ) {
         viewModelScope.launch(Dispatchers.Main) {
-            val p1 = primaryPlayer ?: PlaybackService.playerA ?: return@launch
-            val p2 = secondaryPlayer ?: PlaybackService.playerB ?: return@launch
+            if (PlaybackService.playerA == null || PlaybackService.playerB == null) {
+                ensureServiceStarted()
+                var waitAttempts = 0
+                while ((PlaybackService.playerA == null || PlaybackService.playerB == null) && waitAttempts < 25) {
+                    waitAttempts++
+                    delay(100)
+                }
+            }
+            val liveA = PlaybackService.playerA
+            val liveB = PlaybackService.playerB
+            if (liveA != null && liveB != null &&
+                primaryPlayer !== liveA && primaryPlayer !== liveB
+            ) {
+                primaryPlayer = liveA
+                secondaryPlayer = liveB
+                setupPlayerListeners(liveA)
+                setupPlayerListeners(liveB)
+            }
+            val p1 = primaryPlayer ?: liveA ?: return@launch
+            val p2 = secondaryPlayer ?: liveB ?: return@launch
 
             _uiState.value.currentSong?.let { prevSong ->
                 val listenedMs = p1.currentPosition
@@ -869,7 +895,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             val isBypassed = isBypassActive()
             val isNormEnabled = _uiState.value.volumeNormalizationEnabled && !isBypassed
             val targetProfile = loudnessEngine.getOrComputeLoudnessProfile(song)
-            val baseLinearMultiplier = if (isNormEnabled) targetProfile.linearGainMultiplier else 1.0f
+            val baseLinearMultiplier = if (isNormEnabled) {
+                val m = targetProfile.linearGainMultiplier
+                if (m.isNaN() || m.isInfinite()) 1.0f else m.coerceIn(0.15f, 1.85f)
+            } else 1.0f
             crossfadeTargetVolume = baseLinearMultiplier
 
             val crossfadeEnabled = _uiState.value.crossfadeEnabled && !isBypassed
@@ -1246,7 +1275,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val p = primaryPlayer ?: PlaybackService.playerA ?: return
         val clamped = positionMs.coerceIn(0L, _uiState.value.duration.coerceAtLeast(p.duration))
         hasAutoCrossfadedThisTrack = false
-        _uiState.update { it.copy(currentPosition = clamped) }
+        _currentPositionMs.value = clamped
         val dur = _uiState.value.duration.coerceAtLeast(1L)
         _playbackProgress.value = (clamped.toFloat() / dur.toFloat()).coerceIn(0f, 1f)
 
@@ -1511,6 +1540,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun toggleCrossfade(enabled: Boolean) {
         playlistPrefs.saveCrossfadeEnabled(enabled)
         _uiState.update { it.copy(crossfadeEnabled = enabled) }
+    }
+
+    fun toggleLiquidGlass(enabled: Boolean) {
+        playlistPrefs.saveLiquidGlassEnabled(enabled)
+        _uiState.update { it.copy(liquidGlassEnabled = enabled) }
     }
 
     fun setCrossfadeDuration(sec: Int) {

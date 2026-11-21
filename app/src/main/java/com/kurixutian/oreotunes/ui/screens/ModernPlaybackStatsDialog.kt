@@ -46,6 +46,8 @@ import com.kurixutian.oreotunes.data.preferences.StatsTimeFrame
 import com.kurixutian.oreotunes.data.repository.ArtworkPalette
 import com.kurixutian.oreotunes.ui.components.ArtworkThumbnail
 import com.kurixutian.oreotunes.ui.components.GlassIconButton
+import com.kurixutian.oreotunes.ui.components.LiquidGlassModal
+import com.kurixutian.oreotunes.ui.components.liquidGlassSurface
 import com.kurixutian.oreotunes.ui.theme.Manrope
 
 @Composable
@@ -108,31 +110,13 @@ fun ModernPlaybackStatsDialog(
     val topSong = mostPlayed.firstOrNull()
     val topArtist = topArtists.firstOrNull()
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false
-        )
+    LiquidGlassModal(
+        onDismissRequest = onDismiss
     ) {
-        val dialogWindow =
-            (LocalView.current.parent as? DialogWindowProvider)?.window
-
-        SideEffect {
-            dialogWindow?.let { window ->
-                window.setDimAmount(0.55f)
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                    window.attributes.blurBehindRadius = 48
-                }
-            }
-        }
-
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogBg)
+                .liquidGlassSurface(isLight = isLight)
         ) {
             LazyColumn(
                 modifier = Modifier

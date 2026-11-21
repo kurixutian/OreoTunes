@@ -50,7 +50,9 @@ import com.kurixutian.oreotunes.data.repository.GeminiMoodEngine
 import com.kurixutian.oreotunes.data.update.UpdateInfo
 import com.kurixutian.oreotunes.ui.components.AboutSupportSection
 import com.kurixutian.oreotunes.ui.components.GlassIconButton
+import com.kurixutian.oreotunes.ui.components.LiquidGlassModal
 import com.kurixutian.oreotunes.ui.components.ColorPickerDialog
+import com.kurixutian.oreotunes.ui.components.liquidGlassSurface
 import com.kurixutian.oreotunes.ui.theme.Manrope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -73,12 +75,14 @@ fun SettingsDialog(
     customAccentColor: Color = Color(0xFF64D2FF),
     artworkScalePercent: Int = 100,
     artworkCornerRadiusDp: Int = 28,
+    liquidGlassEnabled: Boolean = true,
     currentVersion: String = "Unknown",
     updateInfo: UpdateInfo? = null,
     isCheckingForUpdate: Boolean = false,
     onCheckForUpdates: () -> Unit = {},
     supportUrl: String = "https://buymeacoffee.com/kurixutian",
     onToggleCrossfade: (Boolean) -> Unit,
+    onToggleLiquidGlass: (Boolean) -> Unit = {},
     onCrossfadeDurationChange: (Int) -> Unit,
     onHeroRefreshHoursChange: (Int) -> Unit = {},
     onToggleVolumeNormalization: (Boolean) -> Unit = {},
@@ -150,37 +154,20 @@ fun SettingsDialog(
         Color(0xFFF43F5E), Color(0xFF6366F1), Color(0xFF22C55E), Color(0xFF10B981), Color(0xFFEAB308), Color(0xFFF97316)
     )
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+    LiquidGlassModal(
+        onDismissRequest = onDismiss
     ) {
-        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
-        SideEffect {
-            dialogWindow?.let { window ->
-                window.setDimAmount(0.55f)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                    window.attributes.blurBehindRadius = 48
-                }
-            }
-        }
-
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
-                .clip(RoundedCornerShape(28.dp))
-                .background(dialogBg)
-                .border(
-                    width = if (isLight) 1.dp else 0.dp,
-                    color = Color.Black.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(28.dp)
-                )
+                .liquidGlassSurface(isLight = isLight)
         ) {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
                     .fillMaxHeight(0.88f)
-                    .padding(22.dp)
+                    .padding(22.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 item {
                     Row(
@@ -278,6 +265,61 @@ fun SettingsDialog(
                             contentDescription = "Open Appearance & Artwork",
                             tint = subtleColor,
                             modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(cardBg)
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(animatedPrimary.copy(alpha = 0.16f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.BlurOn,
+                                contentDescription = null,
+                                tint = animatedPrimary,
+                                modifier = Modifier.size(23.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Liquid Glass",
+                                fontFamily = Manrope,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = textColor
+                            )
+                            Text(
+                                text = "Refractive frost & blur on bars and dialogs",
+                                fontFamily = Manrope,
+                                fontSize = 11.5.sp,
+                                color = subtleColor
+                            )
+                        }
+
+                        Switch(
+                            checked = liquidGlassEnabled,
+                            onCheckedChange = onToggleLiquidGlass,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = animatedPrimary,
+                                uncheckedThumbColor = subtleColor,
+                                uncheckedTrackColor = Color.Transparent
+                            )
                         )
                     }
                 }
@@ -417,22 +459,22 @@ fun SettingsDialog(
                             fontSize = 14.5.sp
                         )
                         Text(
-    text = "Powers AI mood & trip curation algorithm",
-    style = MaterialTheme.typography.bodySmall.copy(fontFamily = Manrope),
-    color = subtleColor
-)
+                            text = "Powers AI mood & trip curation algorithm (Gemini 3.5 Flash Lite)",
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = Manrope),
+                            color = subtleColor
+                        )
 
-Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
-Text(
-    text = "When you generate an AI playlist, your mood request and selected song metadata (title, artist, album, and song ID) are sent to Google Gemini. Your API key is stored locally on this device.",
-    style = MaterialTheme.typography.bodySmall.copy(
-        fontFamily = Manrope,
-        fontSize = 11.sp,
-        lineHeight = 16.sp
-    ),
-    color = subtleColor.copy(alpha = 0.75f)
-)
+                        Text(
+                            text = "When you generate an AI playlist, your mood request and selected song metadata (title, artist, album, and song ID) are sent to Google Gemini. Your API key is stored locally on this device.",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = Manrope,
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp
+                            ),
+                            color = subtleColor.copy(alpha = 0.75f)
+                        )
                         Spacer(modifier = Modifier.height(10.dp))
 
                         OutlinedTextField(
@@ -931,17 +973,16 @@ Text(
     }
 
     if (showAppearanceArtworkDialog) {
-        Dialog(
+        LiquidGlassModal(
             onDismissRequest = {
                 showAppearanceArtworkDialog = false
             }
         ) {
-            Surface(
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.90f),
-                shape = RoundedCornerShape(26.dp),
-                color = dialogBg
+                    .fillMaxWidth(0.92f)
+                    .fillMaxHeight(0.90f)
+                    .liquidGlassSurface(isLight = isLight, shape = RoundedCornerShape(26.dp))
             ) {
                 LazyColumn(
                     modifier = Modifier

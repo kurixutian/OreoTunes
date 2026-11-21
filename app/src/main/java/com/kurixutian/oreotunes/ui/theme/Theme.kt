@@ -43,10 +43,12 @@ fun LiquidMusicTheme(
             secondary = secondaryAccent,
             background = Color(0xFFF7F8FC),
             surface = Color.White,
+            surfaceVariant = Color(0xFFF1F3F9),
             onPrimary = Color.White,
             onSecondary = Color.White,
             onBackground = Color(0xFF121520),
-            onSurface = Color(0xFF121520)
+            onSurface = Color(0xFF121520),
+            onSurfaceVariant = Color(0xFF121520).copy(alpha = 0.65f)
         )
     } else {
         val bg = if (themeMode == AppThemeMode.DARK) Color.Black else palette.darkBackground
@@ -56,10 +58,12 @@ fun LiquidMusicTheme(
             secondary = secondaryAccent,
             background = bg,
             surface = surfaceColor,
+            surfaceVariant = Color.White.copy(alpha = 0.08f),
             onPrimary = Color.Black,
             onSecondary = Color.Black,
             onBackground = Color(0xFFF4F4F8),
-            onSurface = Color(0xFFF4F4F8)
+            onSurface = Color(0xFFF4F4F8),
+            onSurfaceVariant = Color(0xFFF4F4F8).copy(alpha = 0.65f)
         )
     }
 

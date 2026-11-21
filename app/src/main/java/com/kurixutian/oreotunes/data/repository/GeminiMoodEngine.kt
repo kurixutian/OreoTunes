@@ -149,7 +149,7 @@ class GeminiMoodEngine(context: Context) {
             """.trimIndent()
 
             val endpoint =
-                "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent"
 
             val url = URL(endpoint)
 

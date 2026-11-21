@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -30,6 +31,7 @@ import com.kurixutian.oreotunes.domain.model.FolderInfo
 import com.kurixutian.oreotunes.domain.model.Song
 import com.kurixutian.oreotunes.ui.components.AlphabeticalSongRow
 import com.kurixutian.oreotunes.ui.components.ArtworkThumbnail
+import com.kurixutian.oreotunes.ui.components.ModernGlassScrollBar
 import com.kurixutian.oreotunes.ui.theme.Manrope
 
 enum class LibraryTab(val label: String) {
@@ -65,14 +67,18 @@ fun LibraryScreen(
     val isLight = MaterialTheme.colorScheme.background.red > 0.6f
 
     val sortedSongs = remember(songs) { songs.sortedBy { it.title.lowercase() } }
+    val listState = rememberLazyListState()
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .statusBarsPadding()
+            .statusBarsPadding(),
+        contentAlignment = Alignment.TopCenter
     ) {
         LazyColumn(
+            state = listState,
             modifier = Modifier
+                .widthIn(max = 840.dp)
                 .fillMaxSize()
                 .padding(horizontal = 18.dp),
             contentPadding = PaddingValues(bottom = 180.dp),
@@ -148,7 +154,11 @@ fun LibraryScreen(
                             EmptyLibraryNotice(message = "No songs found in your active storage folders.")
                         }
                     } else {
-                        items(sortedSongs, key = { it.id }) { song ->
+                        items(
+                            items = sortedSongs,
+                            key = { it.id },
+                            contentType = { "alphabetical_song_row" }
+                        ) { song ->
                             AlphabeticalSongRow(
                                 song = song,
                                 onClick = { onSongClick(song) },
@@ -418,6 +428,18 @@ fun LibraryScreen(
                     }
                 }
             }
+        }
+
+        if (selectedTab == LibraryTab.TRACKS && sortedSongs.size > 8) {
+            ModernGlassScrollBar(
+                listState = listState,
+                headerOffsetCount = 2,
+                titleProvider = { idx -> if (idx in sortedSongs.indices) sortedSongs[idx].title else "" },
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight(0.65f)
+                    .padding(end = 2.dp)
+            )
         }
     }
 }

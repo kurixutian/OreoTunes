@@ -308,7 +308,8 @@ class MusicRepository(private val context: Context) {
                     MediaStore.Audio.Media.ALBUM_ID,
                     MediaStore.Audio.Media.RELATIVE_PATH,
                     MediaStore.Audio.Media.DISPLAY_NAME,
-                    MediaStore.Audio.Media.DATA
+                    MediaStore.Audio.Media.DATA,
+                    MediaStore.Audio.Media.SIZE
                 )
             } else {
                 arrayOf(
@@ -319,7 +320,8 @@ class MusicRepository(private val context: Context) {
                     MediaStore.Audio.Media.DURATION,
                     MediaStore.Audio.Media.ALBUM_ID,
                     MediaStore.Audio.Media.DATA,
-                    MediaStore.Audio.Media.DISPLAY_NAME
+                    MediaStore.Audio.Media.DISPLAY_NAME,
+                    MediaStore.Audio.Media.SIZE
                 )
             }
 
@@ -401,6 +403,11 @@ class MusicRepository(private val context: Context) {
             val displayNameCol =
                 it.getColumnIndex(
                     MediaStore.Audio.Media.DISPLAY_NAME
+                )
+
+            val sizeCol =
+                it.getColumnIndex(
+                    MediaStore.Audio.Media.SIZE
                 )
 
             while (it.moveToNext()) {
@@ -534,6 +541,7 @@ class MusicRepository(private val context: Context) {
                 } else {
                     ""
                 }
+                val fileSize = if (sizeCol >= 0) it.getLong(sizeCol) else 0L
 
                 songsList.add(
                     Song(
@@ -545,6 +553,7 @@ class MusicRepository(private val context: Context) {
                         contentUri = contentUri,
                         albumArtUri = albumArtUri,
                         folderPath = folderPath,
+                        size = fileSize,
                         filePath = fullFilePath
                     )
                 )

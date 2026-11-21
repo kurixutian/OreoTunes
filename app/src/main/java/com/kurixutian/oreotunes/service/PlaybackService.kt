@@ -84,7 +84,8 @@ class PlaybackService : MediaSessionService() {
                             .setAudioCapabilities(
                                 AudioCapabilities.getCapabilities(context)
                             )
-                            .setEnableFloatOutput(true)
+                            .setEnableFloatOutput(enableFloatOutput)
+                            .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                             .build()
                     } catch (_: Exception) {
                         super.buildAudioSink(

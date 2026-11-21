@@ -90,43 +90,20 @@ fun EditSongMetadataDialog(
         artist != song.artist ||
         album != song.album
 
-    Dialog(
+    LiquidGlassModal(
         onDismissRequest = {
             if (!isSaving) {
                 onDismiss()
             }
-        },
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false
-        )
-    ) {
-        val dialogWindow =
-            (LocalView.current.parent as? DialogWindowProvider)?.window
-
-        SideEffect {
-            dialogWindow?.let { window ->
-                window.setDimAmount(0.55f)
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                    window.attributes.blurBehindRadius = 48
-                }
-            }
         }
-
+    ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
                 .fillMaxHeight(
                     if (candidateEditions.isNotEmpty()) 0.84f else 0.72f
                 )
-                .clip(RoundedCornerShape(24.dp))
-                .background(dialogBg)
-                .border(
-                    width = if (isLight) 1.dp else 0.dp,
-                    color = Color.Black.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(24.dp)
-                )
+                .liquidGlassSurface(isLight = isLight, shape = RoundedCornerShape(24.dp))
                 .padding(22.dp)
         ) {
             Column(

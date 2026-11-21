@@ -99,7 +99,7 @@ fun FilteredSongListScreen(
         if (songs.size > 8) {
             ModernGlassScrollBar(
                 listState = listState,
-                itemsList = songs.map { it.title },
+                titleProvider = { idx -> if (idx in songs.indices) songs[idx].title else "" },
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .padding(end = 2.dp, top = 65.dp, bottom = 140.dp)

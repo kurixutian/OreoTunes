@@ -1,5 +1,6 @@
 package com.kurixutian.oreotunes.ui.components
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -21,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.kurixutian.oreotunes.domain.model.Song
 import com.kurixutian.oreotunes.ui.theme.Manrope
 import kotlinx.coroutines.launch
@@ -51,29 +53,62 @@ fun SongActionSheet(
     val contentTextColor = if (isLight) Color(0xFF121520) else Color.White
     val subtleTextColor = contentTextColor.copy(alpha = 0.65f)
 
+    val hasInWindowBackdrop = LocalLiquidGlassBackdrop.current != null
+
     fun dismissGracefully(action: () -> Unit) {
-        coroutineScope.launch {
-            try {
-                modalState.hide()
-            } finally {
-                onDismiss()
-                action()
+        if (hasInWindowBackdrop) {
+            onDismiss()
+            action()
+        } else {
+            coroutineScope.launch {
+                try {
+                    modalState.hide()
+                } finally {
+                    onDismiss()
+                    action()
+                }
             }
         }
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = modalState,
-        containerColor = Color.Transparent,
-        scrimColor = Color.Black.copy(alpha = 0.50f),
-        dragHandle = null
-    ) {
+    val sheetContainer: @Composable (@Composable () -> Unit) -> Unit = { inner ->
+        if (hasInWindowBackdrop) {
+            BackHandler(onBack = onDismiss)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(50f)
+                    .background(Color.Black.copy(alpha = 0.36f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDismiss
+                    ),
+                contentAlignment = Alignment.BottomCenter
+            ) {
+                inner()
+            }
+        } else {
+            ModalBottomSheet(
+                onDismissRequest = onDismiss,
+                sheetState = modalState,
+                containerColor = Color.Transparent,
+                scrimColor = Color.Black.copy(alpha = 0.35f),
+                dragHandle = null
+            ) {
+                inner()
+            }
+        }
+    }
+
+    sheetContainer {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                .background(sheetBg)
+                .liquidGlassSurface(
+                    isLight = isLight,
+                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+                )
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
@@ -132,23 +167,47 @@ fun SongActionSheet(
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
+
+                // Quick Playback & Playlist Action Bar
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    QuickActionPill(
+                        icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                        label = "Play Next",
+                        contentTextColor = contentTextColor,
+                        onClick = { dismissGracefully { onPlayNext(song) } }
+                    )
+                    QuickActionPill(
+                        icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                        label = "To Queue",
+                        contentTextColor = contentTextColor,
+                        onClick = { dismissGracefully { onAddToQueue(song) } }
+                    )
+                    QuickActionPill(
+                        icon = if (song.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                        label = if (song.isFavorite) "Favorited" else "Favorite",
+                        contentTextColor = if (song.isFavorite) Color(0xFFFF4B72) else contentTextColor,
+                        iconTint = if (song.isFavorite) Color(0xFFFF4B72) else contentTextColor,
+                        onClick = { dismissGracefully { onToggleFavorite(song) } }
+                    )
+                    QuickActionPill(
+                        icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
+                        label = "Playlist",
+                        contentTextColor = contentTextColor,
+                        onClick = { dismissGracefully { onAddToPlaylist(song) } }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
                 HorizontalDivider(color = contentTextColor.copy(alpha = 0.08f))
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 // Actions List
                 ActionRow(Icons.Rounded.PlayArrow, "Play Now", contentTextColor) { dismissGracefully { onPlay(song) } }
-                ActionRow(Icons.Rounded.QueueMusic, "Play Next", contentTextColor) { dismissGracefully { onPlayNext(song) } }
-                ActionRow(Icons.AutoMirrored.Rounded.QueueMusic, "Add to Queue", contentTextColor) { dismissGracefully { onAddToQueue(song) } }
-                ActionRow(
-                    icon = if (song.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                    label = if (song.isFavorite) "Remove from Favorites" else "Add to Favorites",
-                    textColor = if (song.isFavorite) Color(0xFFFF4B72) else contentTextColor,
-                    iconTint = if (song.isFavorite) Color(0xFFFF4B72) else contentTextColor
-                ) {
-                    dismissGracefully { onToggleFavorite(song) }
-                }
-                ActionRow(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to Playlist", contentTextColor) { dismissGracefully { onAddToPlaylist(song) } }
-                
+
                 if (onAutoFetchMetadata != null) {
                     ActionRow(Icons.Rounded.AutoAwesome, "Auto-Fetch High-Res Cover & Tags", MaterialTheme.colorScheme.primary) {
                         dismissGracefully { onAutoFetchMetadata(song) }
@@ -156,6 +215,7 @@ fun SongActionSheet(
                 }
 
                 ActionRow(Icons.Rounded.Edit, "Edit Info & Tags", contentTextColor) { dismissGracefully { onEditMetadata(song) } }
+                ActionRow(Icons.Rounded.Info, "Song Details", contentTextColor) { dismissGracefully { onShowDetails(song) } }
 
                 if (song.album.isNotBlank()) {
                     ActionRow(Icons.Rounded.Album, "View Album", contentTextColor) { dismissGracefully { onViewAlbum(song.album) } }
@@ -165,6 +225,47 @@ fun SongActionSheet(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun QuickActionPill(
+    icon: ImageVector,
+    label: String,
+    contentTextColor: Color,
+    iconTint: Color = contentTextColor,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(46.dp)
+                .clip(CircleShape)
+                .background(contentTextColor.copy(alpha = 0.08f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = iconTint,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            fontFamily = Manrope,
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.Medium,
+            color = contentTextColor,
+            maxLines = 1
+        )
     }
 }
 
