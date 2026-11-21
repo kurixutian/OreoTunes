@@ -62,4 +62,26 @@ class LyricsExtractorTest {
         assertEquals(70000L, parsed[1].timestampMs)
         assertEquals("Chorus repeats", parsed[1].text)
     }
+
+    @Test
+    fun parseLrc_enhancedLrcWithInlineTimestampsAndVoiceTags_stripsMarkup() {
+        val lrc = """
+            [tool:apple-music-ttml]
+            [00:05.308]v1: <00:05.308>If <00:05.408><00:05.408>you <00:05.626><00:05.626>ever <00:08.146><00:08.146>sea<00:09.201>
+            [00:10.713]v2: <00:10.713>I'll <00:10.841><00:10.841>sail [bg:<00:11.000>the world]
+            <00:15.250>Bracketless <00:15.800>word
+        """.trimIndent()
+
+        val parsed = LyricsExtractor.parseLrc(lrc)
+        assertEquals(3, parsed.size)
+
+        assertEquals(5308L, parsed[0].timestampMs)
+        assertEquals("If you ever sea", parsed[0].text)
+
+        assertEquals(10713L, parsed[1].timestampMs)
+        assertEquals("I'll sail the world", parsed[1].text)
+
+        assertEquals(15250L, parsed[2].timestampMs)
+        assertEquals("Bracketless word", parsed[2].text)
+    }
 }

@@ -42,40 +42,55 @@ object LyricsExtractor {
     fun parseLrc(lrcContent: String): List<LyricLine> {
         val lines = lrcContent.lines()
         val result = mutableListOf<LyricLine>()
-        val timeRegex = Regex("\\[(\\d{1,2}):(\\d{2})(?:\\.(\\d{1,3}))?]")
+        val lineTimeRegex = Regex("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?]")
+        val inlineTimeRegex = Regex("<(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?>")
+        val bgTagRegex = Regex("\\[bg:\\s*(.*?)\\]", RegexOption.IGNORE_CASE)
+        val voicePrefixRegex = Regex("^(?:v\\d+|bg)\\s*:\\s*", RegexOption.IGNORE_CASE)
+        val multiSpaceRegex = Regex(" {2,}")
+
+        fun toMillis(minStr: String, secStr: String, msRaw: String): Long {
+            val min = minStr.toLongOrNull() ?: 0L
+            val sec = secStr.toLongOrNull() ?: 0L
+            val ms = when (msRaw.length) {
+                1 -> (msRaw.toLongOrNull() ?: 0L) * 100
+                2 -> (msRaw.toLongOrNull() ?: 0L) * 10
+                3 -> msRaw.toLongOrNull() ?: 0L
+                else -> 0L
+            }
+            return (min * 60 * 1000) + (sec * 1000) + ms
+        }
+
+        fun cleanLyricText(raw: String): String =
+            raw.replace(lineTimeRegex, "")
+                .replace(inlineTimeRegex, "")
+                .replace(bgTagRegex) { it.groupValues[1] }
+                .trim()
+                .replace(voicePrefixRegex, "")
+                .replace(multiSpaceRegex, " ")
+                .trim()
 
         for (line in lines) {
             val trimmed = line.trim()
-            if (trimmed.startsWith("[ti:") ||
-                trimmed.startsWith("[ar:") ||
-                trimmed.startsWith("[al:") ||
-                trimmed.startsWith("[by:") ||
-                trimmed.startsWith("[offset:") ||
-                trimmed.startsWith("[length:") ||
-                trimmed.startsWith("[re:") ||
-                trimmed.startsWith("[ve:")
-            ) {
-                continue
-            }
+            if (trimmed.isEmpty()) continue
 
-            val matches = timeRegex.findAll(trimmed).toList()
+            val matches = lineTimeRegex.findAll(trimmed).toList()
             if (matches.isNotEmpty()) {
-                val text = trimmed.replace(timeRegex, "").trim()
+                val text = cleanLyricText(trimmed)
                 for (match in matches) {
-                    val min = match.groupValues[1].toLongOrNull() ?: 0L
-                    val sec = match.groupValues[2].toLongOrNull() ?: 0L
-                    val msRaw = match.groupValues[3]
-                    val ms = when (msRaw.length) {
-                        1 -> (msRaw.toLongOrNull() ?: 0L) * 100
-                        2 -> (msRaw.toLongOrNull() ?: 0L) * 10
-                        3 -> msRaw.toLongOrNull() ?: 0L
-                        else -> 0L
-                    }
-                    val totalMs = (min * 60 * 1000) + (sec * 1000) + ms
+                    val totalMs = toMillis(match.groupValues[1], match.groupValues[2], match.groupValues[3])
                     result.add(LyricLine(timestampMs = totalMs, text = text))
                 }
-            } else if (trimmed.isNotBlank() && !trimmed.startsWith("[")) {
-                result.add(LyricLine(timestampMs = -1L, text = trimmed))
+            } else if (!trimmed.startsWith("[")) {
+                val firstInline = inlineTimeRegex.find(trimmed)
+                val timestampMs = if (firstInline != null) {
+                    toMillis(firstInline.groupValues[1], firstInline.groupValues[2], firstInline.groupValues[3])
+                } else {
+                    -1L
+                }
+                val text = cleanLyricText(trimmed)
+                if (text.isNotBlank() || timestampMs >= 0L) {
+                    result.add(LyricLine(timestampMs = timestampMs, text = text))
+                }
             }
         }
 

@@ -375,11 +375,13 @@ fun NowPlayingScreen(
         }
     }
 
+    val currentPositionState = rememberUpdatedState(currentPosition)
     val currentLyricIndex by remember(parsedLyrics) {
         derivedStateOf {
             if (parsedLyrics.isEmpty()) -1
             else {
-                val index = parsedLyrics.indexOfLast { it.timestampMs in 0..currentPosition }
+                val pos = currentPositionState.value
+                val index = parsedLyrics.indexOfLast { it.timestampMs in 0..pos }
                 if (index != -1) index else 0
             }
         }
