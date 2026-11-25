@@ -1,5 +1,7 @@
 # OreoTunes
 
+> **Notice:** **OreoTunes is rebranding to Himig** with a lot of new features, bug fixes, and UI tweaks!
+
 ### Your music. Your mood. Your atmosphere. 🎧
 
 **OreoTunes is a modern Android music player built around your local music library.**

@@ -480,6 +480,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         checkAndRequestStoragePermissions()
+        Toast.makeText(
+            this,
+            "Oreo Tunes is rebranding to Himig with new features, bug fixes, and UI tweaks!",
+            Toast.LENGTH_LONG
+        ).show()
 
         setContent {
             val uiState by viewModel.uiState.collectAsState()
