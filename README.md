@@ -1,6 +1,6 @@
 # OreoTunes
 
-> **Notice:** **OreoTunes is rebranding to Himig** with a lot of new features, bug fixes, and UI tweaks!
+> **Notice:** **OreoTunes is rebranding to Himig** with a lot of new features, bug fixes, and UI tweaks! You can export your data through **Insights** and import it into **Himig** when the Himig app releases.
 
 ### Your music. Your mood. Your atmosphere. 🎧
 

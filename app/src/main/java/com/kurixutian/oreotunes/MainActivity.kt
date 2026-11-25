@@ -482,7 +482,7 @@ class MainActivity : ComponentActivity() {
         checkAndRequestStoragePermissions()
         Toast.makeText(
             this,
-            "Oreo Tunes is rebranding to Himig with new features, bug fixes, and UI tweaks!",
+            "Oreo Tunes is rebranding to Himig with new features, bug fixes, and UI tweaks! Export your data in Insights to import it into Himig when it releases.",
             Toast.LENGTH_LONG
         ).show()
 
